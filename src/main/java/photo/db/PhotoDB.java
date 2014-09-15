@@ -23,6 +23,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Time;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -45,7 +46,7 @@ public class PhotoDB
 	private String user, password;
 	private Connection conn;
 
-    // Array storing column order, Hashmap storing column names & type
+    // Array that stores column order, Hashmap that stores column names & type
     private String[] columnNames;
     private HashMap<String, DataType> columnTypes;
 	
@@ -55,11 +56,28 @@ public class PhotoDB
 	private static final String TEMP_PATH = "temp135134";
 
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
-
-    // The unique identifier for each row entry - makes it easier to select a certain row
-    private int primaryKey;
-    public enum DataType { INT, BOOLEAN, DOUBLE, LONG, 
-                            STRING, DATE, TIME, BIN_STREAM }; 
+	
+	// The column of the primary key, to identify each row entry
+	private int primaryKey;
+	// All supported types for queries (for this class)
+    public enum DataType 
+    { 
+    	INT(Types.INTEGER), BOOLEAN(Types.BOOLEAN), DOUBLE(Types.DOUBLE),
+    	BIGINT(Types.BIGINT), STRING(Types.VARCHAR), DATE(Types.DATE),
+    	TIME(Types.TIME), BIN_STREAM(Types.BLOB);
+    	
+    	private int sqlType;
+    	
+    	private DataType(int sqlType)
+    	{
+    		this.sqlType = sqlType;
+    	}
+    	
+    	public int getSqlType()
+    	{
+    		return sqlType;
+    	}
+    }; 
 	
     // Private default values for the table schema
     private static final String[] DEFAULT_COL_NAMES = { "index", "filename", "format", "description",
@@ -73,7 +91,7 @@ public class PhotoDB
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[1], DataType.STRING);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[2], DataType.STRING);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[3], DataType.STRING);
-        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[4], DataType.LONG);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[4], DataType.INT);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[5], DataType.DATE);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[6], DataType.BIN_STREAM);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[7], DataType.BIN_STREAM);
@@ -91,7 +109,9 @@ public class PhotoDB
         this.primaryKey = primaryKey;
 		
         dbHostname = hostname;
-
+        conn = null;
+        
+        // If the temp directory does not exist, create it
 		File tempDir = new File(TEMP_PATH);
 		if (!tempDir.exists())
 			tempDir.mkdirs();
@@ -99,12 +119,15 @@ public class PhotoDB
 		log.info("PhotoDB constructed");
     }
 	
+    // Connect to the database with its current settings;
+    // If PhotoDB is connected to a database, that connection
+    // will be terminated
 	public void connect()
 	{
-	    conn = null;
-	    Properties connectionProps = new Properties();
-	    
 	    try {
+	    	if (conn != null)
+				conn.close();
+	    	
 	    	conn = DriverManager.getConnection(dbURLStart + dbHostname + "/" + dbName, user, password);
 	    	log.info("Connected to database");
 	    }
@@ -113,28 +136,12 @@ public class PhotoDB
 	    	log.error("Error connecting to database");
 	    }
 	}
-
-    public String[] getColumnNames()
-    {
-        String[] cols = new String[columnNames.length];
-        for (int i = 0; i < cols.length; i++)
-            cols[i] = columnNames[i];
-
-        return cols;
-    }
-
-    public void setPrimaryKey(int primaryKey)
-    {
-        this.primaryKey = primaryKey;
-    }
-
-    public int getPrimaryKey()
-    {
-        return primaryKey;
-    }
 	
-	public void loadFolder(String folderPath)								//Inserts all images in folderPath to database
+    // This method MUST be modified if one wants to use a custom table schema,
+    // or data will not be inserted correctly (e.g. change how primary key is derived)
+	public void loadFolder(String folderPath)
 	{
+		// Does NOT load recursively - only files in this folder
 		File[] f = new File(folderPath).listFiles();
 		
 		for (int i = 0; i < f.length; i++)
@@ -142,8 +149,9 @@ public class PhotoDB
 			if (f[i].isFile())
 			{
                 Object[] data = new Object[columnNames.length];
-
-				String filename = f[i].getName();							//Preparing info
+                
+                // Preparing data
+				String filename = f[i].getName();
 				String format = filename.substring(filename.lastIndexOf(".") + 1, filename.length());
 				long size = f[i].length();
                 String description = "[none]";
@@ -157,13 +165,27 @@ public class PhotoDB
                 data[6] = f[i];
                 data[7] = f[i];
 				
-				insertRow(i, data);
+				insertRow(data);
 			}
         }
 		log.info("END: FOLDER LOAD");
 	}
 	
-	public void insertRow(int index, Object[] data)
+	// INSERTS a row containing <code>data[]</code> into the database.
+	//
+	// The index of each object in data[] should correspond to the column in columnNames
+	// and each object's type the type in columnTypes;
+	// i.e. <code>data[i]</code> has data type <code>columnTypes.get(columnNames[i])</code>
+	//     DataType of column:		Type of data[i]:
+	// 		DataType.INT 		= 		Integer
+	//		DataType.BOOLEAN 	= 		Boolean
+	//		DataType.LONG 		= 		Long
+	//		DataType.DOUBLE 	= 		Double
+	//		DataType.STRING 	= 		String
+	//		DataType.DATE 		= 		java.sql.Date
+	//		DataType.TIME 		= 		java.sql.Time
+	// 		DataType.BIN_STREAM	=		java.io.File
+	public void insertRow(Object[] data)
 	{
 		String query = "INSERT INTO " + tableName + " VALUES (?";
         for (int i = 0; i < columnNames.length - 1; i++)
@@ -174,57 +196,16 @@ public class PhotoDB
 		FileInputStream fis = null; 
 		
 		try {
-            stmt = conn.prepareStatement(query);							//Executing query---
+            stmt = conn.prepareStatement(query);
 
  			for (int i = 0; i < columnNames.length; i++)
             {
-                switch (columnTypes.get(columnNames[i]))
-                {
-                    case INT:
-                        stmt.setInt(i, (Integer) data[i]);
-                        break;
-                    case BOOLEAN:
-                        stmt.setBoolean(i, (Boolean) data[i]);
-                        break;
-                    case LONG:
-                        stmt.setLong(i, (Long) data[i]);
-                        break;
-                    case DOUBLE:
-                        stmt.setDouble(i, (Double) data[i]);
-                        break;
-                    case STRING:
-                        stmt.setString(i, (String) data[i]);
-                        break;
-                    case DATE:
-                        stmt.setDate(i, (Date) data[i]);
-                        break;
-                    case TIME:
-                        stmt.setTime(i, (Time) data[i]);
-                        break;
-                    case BIN_STREAM:
-                        fis = new FileInputStream((File) data[i]);								//Inputting the blob
-
-                        if (columnNames[i].toLowerCase().indexOf("thumb") > -1)
-                        {
-                            BufferedImage image = ImageIO.read(fis);						
-                            BufferedImage buff = resizeImage(image, image.getWidth() * 64 / image.getHeight(), 64);
-                            
-                            ByteArrayOutputStream os = new ByteArrayOutputStream();
-                            ImageIO.write(buff,"jpg", os); 
-                            InputStream in = new ByteArrayInputStream(os.toByteArray());
-                            stmt.setBinaryStream(7, in);
-                        }
-                        else
-                            stmt.setBinaryStream(i, fis, ((File) data[i]).length());
-                        break;
-                    default:
-                        log.error("Data type not supported");
-                        break;
-                }
+ 				// i + 1 for arg2, since setX starts at 1 (not 0 like arrays)
+                setPrepStatementType(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
             }
-            stmt.execute();													//---execution finished
+            stmt.execute();
             
-            log.info("Row " + index + ": loaded");
+            log.info("Row loaded");
 		}
 		catch (Exception e) {
 			e.printStackTrace();
@@ -232,17 +213,8 @@ public class PhotoDB
 	    }
 	}
 	
-	public File[] getRetrievedPhotos()										//Can only be called if retrievePhotos() has been called >=1 time
-	{
-		return currPhotos;
-	}
-	
-	public Properties[] getRetrievedPhotoProperties()
-	{
-		return currProps;
-	}
-	
-	public Image getSpecificPhoto(int index)								//Use index from properties to get a specific image
+	// The primary key must be properly set in order for this method to work
+	public Image getSpecificPhoto(int primaryKeyValue)
 	{
 		Image image = null;
 		Statement stmt = null;
@@ -293,7 +265,8 @@ public class PhotoDB
 		return thumbs;
 	}
 	
-	public void retrievePhotos()											//Retrieves photos from database and writes them to a temp directory
+	//Retrieves photos from database and writes them to the temp directory
+	public void retrievePhotos()
 	{
 		Statement stmt = null;
 		ArrayList<File> paths = new ArrayList<File>();
@@ -352,7 +325,8 @@ public class PhotoDB
 		}
 	}
 	
-	public void retrievePhotoPropertiesOnly()									//Retrieves photo properties from database
+	//Retrieves photo properties from database
+	public void retrievePhotoPropertiesOnly()
 	{
 		Statement stmt = null;
 		ArrayList<Properties> props = new ArrayList<Properties>();
@@ -387,7 +361,20 @@ public class PhotoDB
 		for (int i = 0; i < currProps.length; i++)
 			currProps[i] = props.get(i);
 	}
+
+	//Can only be called if retrievePhotos() has been called >=1 time
+	public File[] getRetrievedPhotos()
+	{
+		return currPhotos;
+	}
 	
+	// Can only be called if either retrievePhotos() or retrievePhotoPropertiesOnly() has been called >=1 time
+	public Properties[] getRetrievedPhotoProperties()						
+	{
+		return currProps;
+	}
+	
+	// Deletes all files in the temp directory PhotoDB created
 	public void deleteTempFiles()
 	{
 		File tempDir = new File(TEMP_PATH);
@@ -401,6 +388,29 @@ public class PhotoDB
 			log.info("Deleted temp files");
 		}
 	}
+	
+	// Returns a copy of the column names that has been set,
+	// and which should match the current table schema
+    public String[] getColumnNames()
+    {
+        String[] cols = new String[columnNames.length];
+        for (int i = 0; i < cols.length; i++)
+            cols[i] = columnNames[i];
+
+        return cols;
+    }
+    
+    // Sets the column which contains the unique identifier for
+    // each row entry to primaryKey; the first column corresponds to 0
+    public void setPrimaryKey(int primaryKey)
+    {
+        this.primaryKey = primaryKey;
+    }
+
+    public int getPrimaryKey()
+    {
+        return primaryKey;
+    }
 	
 	public void setHostname(String hostname)
 	{
@@ -427,6 +437,68 @@ public class PhotoDB
 		this.password = password;
 	}
 	
+	// Sets the (index)th parameter in the PreparedStatement to <code>data</code>
+	// and ensures that it has the correct type since a <code>DataType</code> is also passed in
+    private void setPrepStatementType(PreparedStatement stmt, int index, DataType type, Object datum)
+    {
+        try {
+        	if (datum == null)
+        		stmt.setNull()
+        	System.out.println(datum.getClass());
+            switch (type)
+            {
+                case INT:
+                    stmt.setInt(index, (Integer) datum);
+                    break;
+                case BOOLEAN:
+                    stmt.setBoolean(index, (Boolean) datum);
+                    break;
+                case BIGINT:
+                    stmt.setLong(index, (Long) datum);
+                    break;
+                case DOUBLE:
+                    stmt.setDouble(index, (Double) datum);
+                    break;
+                case STRING:
+                    stmt.setString(index, (String) datum);
+                    break;
+                case DATE:
+                    stmt.setDate(index, (Date) datum);
+                    break;
+                case TIME:
+                    stmt.setTime(index, (Time) datum);
+                    break;
+                case BIN_STREAM:
+                    FileInputStream fis = null;
+    
+                    fis = new FileInputStream((File) datum);								//Inputting the blob
+                    
+                    // Photo-specific - if a column name contains the substring "thumb",
+                    // assume that it intends to store thumbnails
+                    if (columnNames[index].toLowerCase().indexOf("thumb") > -1)
+                    {
+                        BufferedImage image = ImageIO.read(fis);
+                        int w = image.getWidth() * 64 / image.getHeight(), h = 64;
+                        BufferedImage buff = resizeImage(image, w, h);
+                        
+                        ByteArrayOutputStream os = new ByteArrayOutputStream();
+                        ImageIO.write(buff,"jpg", os); 
+                        InputStream in = new ByteArrayInputStream(os.toByteArray());
+                        stmt.setBinaryStream(7, in);
+                    }
+                    else
+                        stmt.setBinaryStream(index, fis, ((File) datum).length());
+                    break;
+                default:
+                    log.error("Data type not supported");
+                    break;
+            }
+        } catch (Exception e) {
+			e.printStackTrace();
+	        log.error("ERROR setting PreparedStatement value");
+	    }
+    }
+
 	private BufferedImage resizeImage(Image img, int width, int height)
 	{
 		BufferedImage buff = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
