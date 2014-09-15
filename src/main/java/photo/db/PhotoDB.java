@@ -59,25 +59,6 @@ public class PhotoDB
 	
 	// The column of the primary key, to identify each row entry
 	private int primaryKey;
-	// All supported types for queries (for this class)
-    public enum DataType 
-    { 
-    	INT(Types.INTEGER), BOOLEAN(Types.BOOLEAN), DOUBLE(Types.DOUBLE),
-    	BIGINT(Types.BIGINT), STRING(Types.VARCHAR), DATE(Types.DATE),
-    	TIME(Types.TIME), BIN_STREAM(Types.BLOB);
-    	
-    	private int sqlType;
-    	
-    	private DataType(int sqlType)
-    	{
-    		this.sqlType = sqlType;
-    	}
-    	
-    	public int getSqlType()
-    	{
-    		return sqlType;
-    	}
-    }; 
 	
     // Private default values for the table schema
     private static final String[] DEFAULT_COL_NAMES = { "index", "filename", "format", "description",
@@ -442,8 +423,12 @@ public class PhotoDB
     private void setPrepStatementType(PreparedStatement stmt, int index, DataType type, Object datum)
     {
         try {
+        	// Allow null datum - just return immediately
         	if (datum == null)
-        		stmt.setNull()
+        	{
+        		stmt.setNull(index, type.getSqlType());
+        		return;
+        	}
         	System.out.println(datum.getClass());
             switch (type)
             {

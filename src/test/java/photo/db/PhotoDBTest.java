@@ -3,7 +3,6 @@ package photo.db;
 import java.util.HashMap;
 
 import photo.db.PhotoDB;
-import photo.db.PhotoDB.DataType;
 
 public class PhotoDBTest
 {
@@ -37,7 +36,7 @@ public class PhotoDBTest
 		
 		// Data
 		Object[] data = new Object[cols.length];
-		data[0] = 4;
+		data[0] = 5;
 		data[1] = null;
 		data[2] = 3.56;
 		data[3] = new java.sql.Date(new java.util.Date().getTime());
