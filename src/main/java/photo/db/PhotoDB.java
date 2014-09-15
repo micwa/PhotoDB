@@ -22,8 +22,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Time;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Properties;
 
 import javax.imageio.ImageIO;
@@ -42,17 +44,35 @@ public class PhotoDB
 	private String tableName;
 	private String user, password;
 	private Connection conn;
+
+    // Array storing column order, Hashmap storing column names & type
+    private String[] columnNames;
+    private HashMap<String, DataType> columnTypes;
 	
     // Retrieved photos & properties
 	private File[] currPhotos;
 	private Properties[] currProps;
-	private static final String TEMP_PATH = "~/temp";//"C:\\temp131536";
+	private static final String TEMP_PATH = "temp135134";
 
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
+
+    public enum DataType { INT, BOOLEAN, DOUBLE, LONG, 
+                            STRING, DATE, TIME, BIN_STREAM }; 
 	
 	public PhotoDB(String hostname)
 	{
 		dbHostname = hostname;
+        columnNames = new String[] { "index", "filename", "format", "description",
+                            "size", "date", "image", "thumb" };
+        columnTypes = new HashMap<String, DataType>();
+        columnTypes.put(columnNames[0], DataType.INT);
+        columnTypes.put(columnNames[1], DataType.STRING);
+        columnTypes.put(columnNames[2], DataType.STRING);
+        columnTypes.put(columnNames[3], DataType.STRING);
+        columnTypes.put(columnNames[4], DataType.LONG);
+        columnTypes.put(columnNames[5], DataType.DATE);
+        columnTypes.put(columnNames[6], DataType.BIN_STREAM);
+        columnTypes.put(columnNames[7], DataType.BIN_STREAM);
 		
 		File tempDir = new File(TEMP_PATH);
 		if (!tempDir.exists())
@@ -81,68 +101,101 @@ public class PhotoDB
 		File[] f = new File(folderPath).listFiles();
 		
 		for (int i = 0; i < f.length; i++)
+        {
 			if (f[i].isFile())
 			{
+                Object[] data = new Object[columnNames.length];
+
 				String filename = f[i].getName();							//Preparing info
 				String format = filename.substring(filename.lastIndexOf(".") + 1, filename.length());
 				long size = f[i].length();
+                String description = "[none]";
+
+                data[0] = i;
+                data[1] = filename;
+                data[2] = format;
+                data[3] = description;
+                data[4] = size;
+                data[5] = new Date(f[i].lastModified());
+                data[6] = f[i];
+                data[7] = f[i];
 				
-				insertRow(0 + i, filename, format, "nothing here", size, f[i]);
+				insertRow(i, data);
 			}
+        }
 		log.info("END: FOLDER LOAD");
 	}
 	
-	public void insertRow(int index, String filename, String format, String description, long size, File blob)
+	public void insertRow(int index, Object[] data)
 	{
-		String query = "INSERT INTO " + tableName + " VALUES (?, ?, ?, ?, ?, ?, ?)";
+		String query = "INSERT INTO " + tableName + " VALUES (?";
+        for (int i = 0; i < columnNames.length - 1; i++)
+            query += ", ?";
+        query += ")";
+
 		PreparedStatement stmt = null;
 		FileInputStream fis = null; 
 		
 		try {
-			stmt = conn.prepareStatement("SELECT * FROM " + tableName + " WHERE filename=?");
-			stmt.setString(1, filename);
-			stmt.execute();
-			ResultSet rs = stmt.getResultSet();
-			if (!rs.next())
-			{
-				stmt.close();
-			    stmt = conn.prepareStatement(query);							//Executing query---
-			    
-			    stmt.setInt(1, index);
-			    stmt.setString(2, filename);
-			    stmt.setString(3, format);
-			    stmt.setString(4,  "nothing here");
-			    stmt.setLong(5, size);			   
-	
-			    fis = new FileInputStream(blob);								//Inputting the blob
-			    stmt.setBinaryStream(6, fis, size);
-			    
-			    fis = new FileInputStream(blob);								//Assuming stream can't be reused
-			    BufferedImage image = ImageIO.read(fis);						
-			    BufferedImage buff = resizeImage(image, image.getWidth() * 64 / image.getHeight(), 64);
-			    
-			    ByteArrayOutputStream os = new ByteArrayOutputStream();
-			    ImageIO.write(buff,"jpg", os); 
-			    InputStream in = new ByteArrayInputStream(os.toByteArray());
-			    stmt.setBinaryStream(7, in);
-			    
-			    stmt.execute();													//---execution finished
-				
-				log.info(filename + " loaded");
-			}
-			else
-				log.info(filename + " already exists in database");
+            stmt = conn.prepareStatement(query);							//Executing query---
+
+ 			for (int i = 0; i < columnNames.length; i++)
+            {
+                switch (columnTypes.get(columnNames[i]))
+                {
+                    case INT:
+                        stmt.setInt(i, (Integer) data[i]);
+                        break;
+                    case BOOLEAN:
+                        stmt.setBoolean(i, (Boolean) data[i]);
+                        break;
+                    case LONG:
+                        stmt.setLong(i, (Long) data[i]);
+                        break;
+                    case DOUBLE:
+                        stmt.setDouble(i, (Double) data[i]);
+                        break;
+                    case STRING:
+                        stmt.setString(i, (String) data[i]);
+                        break;
+                    case DATE:
+                        stmt.setDate(i, (Date) data[i]);
+                        break;
+                    case TIME:
+                        stmt.setTime(i, (Time) data[i]);
+                        break;
+                    case BIN_STREAM:
+                        fis = new FileInputStream((File) data[i]);								//Inputting the blob
+
+                        if (columnNames[i].toLowerCase().indexOf("thumb") > -1)
+                        {
+                            BufferedImage image = ImageIO.read(fis);						
+                            BufferedImage buff = resizeImage(image, image.getWidth() * 64 / image.getHeight(), 64);
+                            
+                            ByteArrayOutputStream os = new ByteArrayOutputStream();
+                            ImageIO.write(buff,"jpg", os); 
+                            InputStream in = new ByteArrayInputStream(os.toByteArray());
+                            stmt.setBinaryStream(7, in);
+                        }
+                        else
+                            stmt.setBinaryStream(i, fis, ((File) data[i]).length());
+                        break;
+                    default:
+                        log.error("Data type not supported");
+                        break;
+                }
+            }
+            stmt.execute();													//---execution finished
+            
+            log.info("Row " + index + ": loaded");
 		}
 		catch (Exception e) {
 			e.printStackTrace();
 	        log.error("ERROR inserting row");
-	    } finally {
-	    	try { if (stmt != null) stmt.close();} catch (SQLException e) {}
-	    	try { if (fis != null) fis.close();} catch (IOException e) {}
-		}
+	    }
 	}
 	
-	public File[] getRetrievedPhotos()												//Can only be called if retrievePhotos() has been called >=1 time
+	public File[] getRetrievedPhotos()										//Can only be called if retrievePhotos() has been called >=1 time
 	{
 		return currPhotos;
 	}
@@ -244,10 +297,6 @@ public class PhotoDB
 	        			
 	        			log.info(filename + " written to disk");
 	        		} catch (IOException e) {e.printStackTrace();}
-	        		finally {
-	        			try { if (in != null) in.close();} catch (IOException e) {}
-	        			try { if (os != null) os.close();} catch (IOException e) {}
-	        		}
 	        	}
 	        }
 	    } catch (SQLException e ) {
@@ -316,19 +365,19 @@ public class PhotoDB
 		}
 	}
 	
-	public void setHostname(String host)
+	public void setHostname(String hostname)
 	{
-		dbHostname = host;
+		this.dbHostname = hostname;
 	}
 	
-	public void setDBName(String db)
+	public void setDBName(String dbName)
 	{
-		dbName = db;
+		this.dbName = dbName;
 	}
 	
-	public void setTableName(String table)
+	public void setTableName(String tableName)
 	{
-		tableName = table;
+		this.tableName = tableName;
 	}
 	
 	public void setUser(String user)
@@ -336,9 +385,9 @@ public class PhotoDB
 		this.user = user;
 	}
 	
-	public void setPassword(String passwd)
+	public void setPassword(String password)
 	{
-		this.password = passwd;
+		this.password = password;
 	}
 	
 	private BufferedImage resizeImage(Image img, int width, int height)
