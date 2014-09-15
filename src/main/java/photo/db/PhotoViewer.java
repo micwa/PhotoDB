@@ -52,8 +52,7 @@ public class PhotoViewer extends JFrame
 	public PhotoViewer(PhotoDB db)
 	{
 		super();
-		try
-		{
+		try {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
 		} catch (Exception e) { e.printStackTrace(); }
 		
@@ -63,19 +62,19 @@ public class PhotoViewer extends JFrame
 		add(photoPanel);
 		
 		settingsDialog = SettingsDialog.getDialog();						//settingsDialog dialog
+		settingsDialog.setPhotoViewer(this);
 		settingsDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 		settingsDialog.addWindowListener(new WindowAdapter(){
-			public void windowOpened(WindowEvent e) { log.info("Dialog opened"); }
-			public void windowClosed(WindowEvent e)
+			public void windowClosing(WindowEvent e)
 			{
 				settingsDialog.dialogCancel();								//Don't save changes if closed using "x"
-				updateDBSettingsDialog();
+				updateSettingsFromDialog();
 				log.info("Dialog closed");
 			}
 		});
 		settingsDialog.setVisible(false);
 		
-		updateDBSettingsDialog();
+		updateSettingsFromDialog();
 		
 		log.info("PhotoViewer constructed");
 	}
@@ -108,10 +107,12 @@ public class PhotoViewer extends JFrame
 		
 		setJMenuBar(menuBar);
 		
-		//log.info("Menu initialized");
+		log.info("Menu initialized");
 	}
 	
-	private void updateDBSettingsDialog()
+	// Gets the inputted settings from the settings dialog and calls PhotoPanel
+	// to update them in PhotoDB
+	public void updateSettingsFromDialog()
 	{
 		String host = settingsDialog.getHostname();
 		String dbName = settingsDialog.getDBName();

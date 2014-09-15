@@ -72,7 +72,7 @@ public class PhotoDB
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[1], DataType.STRING);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[2], DataType.STRING);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[3], DataType.STRING);
-        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[4], DataType.INT);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[4], DataType.LONG);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[5], DataType.DATE);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[6], DataType.BIN_STREAM);
         DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[7], DataType.BIN_STREAM);
@@ -182,7 +182,7 @@ public class PhotoDB
  			for (int i = 0; i < columnNames.length; i++)
             {
  				// i + 1 for arg2, since setX starts at 1 (not 0 like arrays)
-                setPrepStatementType(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
+                setPrepStatementParam(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
             }
             stmt.execute();
             
@@ -194,24 +194,37 @@ public class PhotoDB
 	    }
 	}
 	
-	// The primary key must be properly set in order for this method to work
-	public Image getSpecificPhoto(int primaryKeyValue)
+	// THE primary key must be properly set in order for this method to work
+	//
+	// Based on the <code>primaryKeyValue</code>, selects a row whose primary key
+	// value matches that value, and returns the photo stored in that row.
+	public Image getSpecificPhoto(Object primaryKeyValue)
 	{
 		Image image = null;
-		Statement stmt = null;
+		PreparedStatement stmt = null;
+		String query = "SELECT * FROM ? WHERE `?`=?";
 		
 		try {
-			stmt = conn.createStatement();
-			ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName + " WHERE `index`=" + index);
+			stmt = conn.prepareStatement(query);
+			stmt.setString(1, tableName);
+			stmt.setString(2, columnNames[primaryKey]);
+			stmt.setObject(3, primaryKeyValue, columnTypes.get(columnNames[primaryKey]).getSqlType());
+			ResultSet rs = stmt.executeQuery();
 			
 			rs.next();														//Reading the image
-			InputStream in = rs.getBinaryStream(6);	
-			image = ImageIO.read(in);	
+			for (int i = 0; i < columnNames.length; i++)					//Loop through columns to find image (desired) column
+			{
+				String colName = columnNames[i];
+				DataType type = columnTypes.get(colName);
+				if (colName.indexOf("thumb") == -1 && type == DataType.BIN_STREAM)
+				{
+					InputStream in = rs.getBinaryStream(i + 1);				//ResultSets start at 1!
+					image = ImageIO.read(in);
+				}
+			}
 		} catch (Exception e ) {
 	    	e.printStackTrace();
-	        log.error("ERROR retrieving photo with index " + index);
-	    } finally {
-	    	try { if (stmt != null) stmt.close();} catch (SQLException e) {}
+	        log.error("ERROR retrieving photo with primary key value: " + primaryKeyValue);
 	    }
 		return image;
 	}
@@ -420,7 +433,7 @@ public class PhotoDB
 	
 	// Sets the (index)th parameter in the PreparedStatement to <code>data</code>
 	// and ensures that it has the correct type since a <code>DataType</code> is also passed in
-    private void setPrepStatementType(PreparedStatement stmt, int index, DataType type, Object datum)
+    private void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum)
     {
         try {
         	// Allow null datum - just return immediately
@@ -438,8 +451,8 @@ public class PhotoDB
                 case BOOLEAN:
                     stmt.setBoolean(index, (Boolean) datum);
                     break;
-                case BIGINT:
-                    stmt.setLong(index, (Long) datum);
+                case LONG:
+                    stmt.setLong(index, (Long) datum);				//Long converts to BIGINT in database
                     break;
                 case DOUBLE:
                     stmt.setDouble(index, (Double) datum);
@@ -460,7 +473,7 @@ public class PhotoDB
                     
                     // Photo-specific - if a column name contains the substring "thumb",
                     // assume that it intends to store thumbnails
-                    if (columnNames[index].toLowerCase().indexOf("thumb") > -1)
+                    if (columnNames[index - 1].toLowerCase().indexOf("thumb") > -1)
                     {
                         BufferedImage image = ImageIO.read(fis);
                         int w = image.getWidth() * 64 / image.getHeight(), h = 64;
@@ -469,7 +482,7 @@ public class PhotoDB
                         ByteArrayOutputStream os = new ByteArrayOutputStream();
                         ImageIO.write(buff,"jpg", os); 
                         InputStream in = new ByteArrayInputStream(os.toByteArray());
-                        stmt.setBinaryStream(7, in);
+                        stmt.setBinaryStream(index, in);
                     }
                     else
                         stmt.setBinaryStream(index, fis, ((File) datum).length());

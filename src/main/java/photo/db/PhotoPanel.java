@@ -195,6 +195,8 @@ public class PhotoPanel extends JPanel
 		db.setTableName(tableName);
 		db.setUser(user);
 		db.setPassword(password);
+		
+		log.info("DB settings updated");
 	}
 	
 	public void updatePhotoProperties()

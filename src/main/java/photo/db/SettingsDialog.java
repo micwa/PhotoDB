@@ -29,6 +29,7 @@ public class SettingsDialog extends JDialog
 	private JPasswordField pwdField;
 	private String[] prevValues;
 	
+	private PhotoViewer viewer;
 	private static SettingsDialog self = new SettingsDialog();
 	private static final Logger log = Logger.getLogger(SettingsDialog.class.getName());
 	
@@ -125,6 +126,11 @@ public class SettingsDialog extends JDialog
 		return self;
 	}
 	
+	public void setPhotoViewer(PhotoViewer viewer)
+	{
+		this.viewer = viewer;
+	}
+	
 	public String getHostname()
 	{
 		return txtHostname.getText();
@@ -212,7 +218,10 @@ public class SettingsDialog extends JDialog
 		public void actionPerformed(ActionEvent e)
 		{
 			if (e.getActionCommand().equals("OK"))
+			{
 				dialogUpdate();
+				viewer.updateSettingsFromDialog();
+			}
 			else if (e.getActionCommand().equals("Cancel"))
 				dialogCancel();
 		}

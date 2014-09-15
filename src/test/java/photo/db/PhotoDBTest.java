@@ -8,14 +8,14 @@ public class PhotoDBTest
 {
 	public static void main(String[] args)
 	{
-		test_table();
-		/*
+		//test_table();
+		
 		PhotoDB db = new PhotoDB("localhost:3306");
 		db.setDBName("media_db");
 		db.setTableName("photo_table");
 		db.setUser("root");
 		db.setPassword("admin");
-		db.connect();*/
+		db.connect();
 	}
 	
 	public static void test_table()

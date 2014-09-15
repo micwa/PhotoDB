@@ -6,7 +6,7 @@ import java.sql.Types;
 public enum DataType
 {
 	INT(Types.INTEGER), BOOLEAN(Types.BOOLEAN), DOUBLE(Types.DOUBLE),
-	BIGINT(Types.BIGINT), STRING(Types.VARCHAR), DATE(Types.DATE),
+	LONG(Types.BIGINT), STRING(Types.VARCHAR), DATE(Types.DATE),
 	TIME(Types.TIME), BIN_STREAM(Types.BLOB);
 	
 	private int sqlType;

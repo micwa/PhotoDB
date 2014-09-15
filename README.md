@@ -18,8 +18,5 @@ If Java is not up to date or missing, one can download it at [Oracle's website] 
 
 Some current bugs/things to work on:
 
-* Fix loadFolder()
-* Settings are not saved if the windowClosing() event is not triggered when
-the dialog is confirmed or canceled
 * The textboxes in the settings dialog are not tall enough (thus sometimes
 obscuring the entered text)
