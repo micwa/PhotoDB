@@ -56,30 +56,48 @@ public class PhotoDB
 
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
 
+    // The unique identifier for each row entry - makes it easier to select a certain row
+    private int primaryKey;
     public enum DataType { INT, BOOLEAN, DOUBLE, LONG, 
                             STRING, DATE, TIME, BIN_STREAM }; 
 	
+    // Private default values for the table schema
+    private static final String[] DEFAULT_COL_NAMES = { "index", "filename", "format", "description",
+                            "size", "date", "image", "thumb" };
+    private static final HashMap<String, DataType> DEFAULT_COL_TYPES;
+
+    static
+    {
+        DEFAULT_COL_TYPES = new HashMap<String, DataType>();
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[0], DataType.INT);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[1], DataType.STRING);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[2], DataType.STRING);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[3], DataType.STRING);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[4], DataType.LONG);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[5], DataType.DATE);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[6], DataType.BIN_STREAM);
+        DEFAULT_COL_TYPES.put(DEFAULT_COL_NAMES[7], DataType.BIN_STREAM);
+    }
+
 	public PhotoDB(String hostname)
 	{
-		dbHostname = hostname;
-        columnNames = new String[] { "index", "filename", "format", "description",
-                            "size", "date", "image", "thumb" };
-        columnTypes = new HashMap<String, DataType>();
-        columnTypes.put(columnNames[0], DataType.INT);
-        columnTypes.put(columnNames[1], DataType.STRING);
-        columnTypes.put(columnNames[2], DataType.STRING);
-        columnTypes.put(columnNames[3], DataType.STRING);
-        columnTypes.put(columnNames[4], DataType.LONG);
-        columnTypes.put(columnNames[5], DataType.DATE);
-        columnTypes.put(columnNames[6], DataType.BIN_STREAM);
-        columnTypes.put(columnNames[7], DataType.BIN_STREAM);
+        this(hostname, DEFAULT_COL_NAMES, DEFAULT_COL_TYPES, 0);
+	}
+
+    public PhotoDB(String hostname, String[] columnNames, HashMap<String, DataType> columnTypes, int primaryKey)
+    {
+        this.columnNames = columnNames;
+        this.columnTypes = columnTypes;
+        this.primaryKey = primaryKey;
 		
+        dbHostname = hostname;
+
 		File tempDir = new File(TEMP_PATH);
 		if (!tempDir.exists())
 			tempDir.mkdirs();
 		
 		log.info("PhotoDB constructed");
-	}
+    }
 	
 	public void connect()
 	{
@@ -95,6 +113,25 @@ public class PhotoDB
 	    	log.error("Error connecting to database");
 	    }
 	}
+
+    public String[] getColumnNames()
+    {
+        String[] cols = new String[columnNames.length];
+        for (int i = 0; i < cols.length; i++)
+            cols[i] = columnNames[i];
+
+        return cols;
+    }
+
+    public void setPrimaryKey(int primaryKey)
+    {
+        this.primaryKey = primaryKey;
+    }
+
+    public int getPrimaryKey()
+    {
+        return primaryKey;
+    }
 	
 	public void loadFolder(String folderPath)								//Inserts all images in folderPath to database
 	{
