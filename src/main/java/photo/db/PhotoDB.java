@@ -1,5 +1,5 @@
 /**
- * PhotoDB - MySQL client/GUI for accessing photo databases
+ * This file is part of PhotoDB - MySQL client/GUI for accessing photo databases
  * 
  * Copyright (C) 2014 by Michael Wang
  *
@@ -76,8 +76,8 @@ public class PhotoDB
 
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
 	
-	// The column of the primary key, to identify each row entry
-	private int primaryKey;
+	// The column of the unique key, to identify each row entry
+	private int uniqueKey;
 	
     // Private default values for the table schema
     private static final String[] DEFAULT_COL_NAMES = { "INDEX", "FILENAME", "FORMAT", "DESCRIPTION",
@@ -102,11 +102,11 @@ public class PhotoDB
         this(hostname, DEFAULT_COL_NAMES, DEFAULT_COL_TYPES, 0);
 	}
 
-    public PhotoDB(String hostname, String[] columnNames, HashMap<String, DataType> columnTypes, int primaryKey)
+    public PhotoDB(String hostname, String[] columnNames, HashMap<String, DataType> columnTypes, int uniqueKey)
     {
         this.columnNames = columnNames;
         this.columnTypes = columnTypes;
-        this.primaryKey = primaryKey;
+        this.uniqueKey = uniqueKey;
 		
         dbHostname = hostname;
         conn = null;
@@ -121,7 +121,7 @@ public class PhotoDB
 	
     // Connect to the database with its current settings;
     // If PhotoDB is connected to a database, that connection
-    // will be terminated
+    // will be terminated.
 	public void connect()
 	{
 	    try {
@@ -138,7 +138,7 @@ public class PhotoDB
 	}
 	
     // This method MUST be modified if one wants to use a custom table schema,
-    // or data will not be inserted correctly (e.g. change how primary key is derived)
+    // or data will not be inserted correctly (e.g. change how unique key is derived).
 	public void loadFolder(String folderPath)
 	{
 		// Does NOT load recursively - only files in this folder
@@ -214,20 +214,20 @@ public class PhotoDB
 	    }
 	}
 	
-	// THE primary key must be properly set in order for this method to work
+	// THE unique key must be properly set in order for this method to work.
 	//
-	// Based on the <code>primaryKeyValue</code>, selects a row whose primary key
+	// Based on the <code>uniqueKeyValue</code>, selects a row whose unique key
 	// value matches that value, and returns the photo stored in that row.
-	public Image getSpecificPhoto(Object primaryKeyValue)
+	public Image getSpecificPhoto(Object uniqueKeyValue)
 	{
 		Image image = null;
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName + " WHERE `"			//Table name has to be hardcoded
-				+ columnNames[primaryKey] + "`=?";							//can't insert column name as param, so it's here
+				+ columnNames[uniqueKey] + "`=?";							//can't insert column name as param, so it's here
 		
 		try {
 			stmt = conn.prepareStatement(query);
-			stmt.setObject(1, primaryKeyValue, columnTypes.get(columnNames[primaryKey]).getSqlType());
+			stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
 			ResultSet rs = stmt.executeQuery();
 			
 			rs.next();														//Reading the image
@@ -243,7 +243,7 @@ public class PhotoDB
 			}
 		} catch (Exception e ) {
 	    	e.printStackTrace();
-	        log.error("ERROR retrieving photo with primary key value: " + primaryKeyValue);
+	        log.error("ERROR retrieving photo with unique key value: " + uniqueKeyValue);
 	    }
 		return image;
 	}
@@ -278,8 +278,9 @@ public class PhotoDB
 		return thumbs;
 	}
 	
-	// Retrieves photos from database and writes them to the temp directory,
-	// and retrieves and stores the photo properties as well
+	// Retrieves photos from database and writes them to the temp directory
+	// in the order that they were inserted into the database.
+	// This method retrieves and stores the photo properties as well.
 	public void retrievePhotos()
 	{
 		Statement stmt = null;
@@ -391,27 +392,51 @@ public class PhotoDB
 		}
 	}
 	
-	// Returns a copy of the column names that has been set,
-	// and which should match the current table schema
+	// Returns the array of the column names that has been set,
+	// and which should match the current table schema.
     public String[] getColumnNames()
     {
-        String[] cols = new String[columnNames.length];
-        for (int i = 0; i < cols.length; i++)
-            cols[i] = columnNames[i];
-
-        return cols;
+        return columnNames;
+    }
+    
+    public void setColumnNames(String[] columnNames)
+    {
+    	this.columnNames = columnNames;
+    }
+    
+    // Returns the mappings of column names and data types
+    public HashMap<String, DataType> getColumnTypes()
+    {
+    	return columnTypes;
+    }
+    
+    public void setColumnTypes(HashMap<String, DataType> columnTypes)
+    {
+    	this.columnTypes = columnTypes;
     }
     
     // Sets the column which contains the unique identifier for
-    // each row entry to primaryKey; the first column corresponds to 0
-    public void setPrimaryKey(int primaryKey)
+    // each row entry to uniqueKey; the first column corresponds to 0.
+    public void setUniqueKey(int uniqueKey)
     {
-        this.primaryKey = primaryKey;
+        this.uniqueKey = uniqueKey;
     }
 
-    public int getPrimaryKey()
+    public int getUniqueKey()
     {
-        return primaryKey;
+        return uniqueKey;
+    }
+    
+    // Returns an array of ALL unique keys for each row entry in the table,
+    // in the order in which they were inserted. Thus, the nth unique key will match
+    // the nth photo and thumbnail from getRetrievedPhotos() and getPhotoThumbnails().
+    public Object[] getAllUniqueKeys()
+    {
+    	Object[] objs = null;
+    	Statement stmt = null;
+    	String query = "SELECT " + columnNames[uniqueKey] + " FROM " + tableName;
+    	
+    	return objs;
     }
 	
 	public void setHostname(String hostname)
@@ -440,10 +465,10 @@ public class PhotoDB
 	}
 	
 	// Sets the (index)th parameter in the PreparedStatement to <code>data</code>
-	// and ensures that it has the correct type since a <code>DataType</code> is also passed in
+	// and ensures that it has the correct type since a <code>DataType</code> is also passed in.
     private void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum) throws SQLException
     {
-    	// Allow null datum - just return immediately
+    	// Datum may be null - just return immediately
     	if (datum == null)
     	{
     		stmt.setNull(index, type.getSqlType());
@@ -489,10 +514,14 @@ public class PhotoDB
     	}
     }
     
-    // For all data types except DataType.BIN_STREAM, returns the Java object corresponding
-    // to the SQL type; for BIN_STREAM, this method writes the file to the temp directory
-    // (UNLESS the column name for that index contains "thumb", i.e. stores a thumbnail)
-    // and returns a java.io.File that refers to the written file
+    // FOR all data types except DataType.BIN_STREAM, returns the Java object corresponding
+    // to the SQL type; for DataType.BIN_STREAM, this method writes the file to the temp directory
+    // (UNLESS the column name for that index contains "thumb", i.e. stores a thumbnail, in
+    // which case this method does nothing) and returns a java.io.File that refers to the
+    // written file. 
+    //
+    // Note: The type of the returned object *should* be the same as the type that was
+    // inserted at the (index)th column. Still, cast at your discretion :)
     private Object getResultSetParam(ResultSet rs, int index, DataType type) throws SQLException
     {
     	switch (type)
@@ -510,8 +539,8 @@ public class PhotoDB
             	if (columnNames[index - 1].toLowerCase().indexOf("thumb") > -1)
             		return null;
             	
-            	// Filename = the value of the primary key + simple hash
-            	String filename = rs.getObject(primaryKey + 1).toString();
+            	// Filename = the value of the unique key + simple hash
+            	String filename = rs.getObject(uniqueKey + 1).toString();
             	filename += filename.hashCode() + "";
             	File tempFile = new File(TEMP_PATH + "\\" + filename);
             	

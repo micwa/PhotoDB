@@ -20,7 +20,9 @@ package photo.db;
 
 import java.sql.Types;
 
-// Represents all supported data types
+// Represents all supported data types - each enum represents the
+// type (in Java), which is mapped to the type in SQL. The latter can be 
+// obtained by calling getSqlType().
 public enum DataType
 {
 	INT(Types.INTEGER), BOOLEAN(Types.BOOLEAN), DOUBLE(Types.DOUBLE),
