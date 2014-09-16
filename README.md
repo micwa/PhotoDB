@@ -4,10 +4,14 @@ for viewing and accessing a MySQL photo database.
 ## Overview
 
 This project mainly consists of PhotoDB, which provides methods to retrieve
-and modify photos from a MySQL database (or to be more specific, one table per
-connection), and the PhotoViewer GUI.
+and modify rows and photos from a MySQL database, and the PhotoViewer GUI.
 
-More documentation to come later.
+The GUI is designed to connect to the database; retrieve thumbnails which it
+places in the sidebar to browse through; and get a specific photo from the
+database when the user clicks on its corresponding thumbnail. Options are also
+available for uploading and deleting photos in the database.
+
+--More documentation to come later--
 
 ## JAR File
 
@@ -19,13 +23,3 @@ If Java is not up to date or missing, download it at [Oracle's website] (http://
 ## License
 
 This software is released under the [GPLv3 license] (http://www.gnu.org/copyleft/gpl.html).
-
-## Bugs/TODO
-
-Some current bugs/things to work on:
-
-* Fix thumbnail sizes
-* Re-write retrievePhoto/Properties methods in PhotoDB
-* Re-write updatePhotoProperties() in PhotoPanel
-* The textboxes in the settings dialog are not tall enough (thus sometimes
-obscuring the entered text)
