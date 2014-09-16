@@ -60,7 +60,7 @@ public class SettingsDialog extends JDialog
 		getContentPane().setLayout(new BorderLayout());
 		contentPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
 		getContentPane().add(contentPanel, BorderLayout.CENTER);
-		contentPanel.setLayout(new GridLayout(5, 2, 10, 30));
+		contentPanel.setLayout(new GridLayout(5, 2, 10, 10));
 		{
 			JLabel lblNewLabel_1 = new JLabel("URL:port");
 			lblNewLabel_1.setHorizontalAlignment(SwingConstants.CENTER);
