@@ -61,8 +61,8 @@ public class PhotoDB
 	private int primaryKey;
 	
     // Private default values for the table schema
-    private static final String[] DEFAULT_COL_NAMES = { "index", "filename", "format", "description",
-                            "size", "date", "image", "thumb" };
+    private static final String[] DEFAULT_COL_NAMES = { "INDEX", "FILENAME", "FORMAT", "DESCRIPTION",
+                            "SIZE", "DATE", "IMAGE", "THUMB" };
     private static final HashMap<String, DataType> DEFAULT_COL_TYPES;
 
     static
@@ -124,6 +124,7 @@ public class PhotoDB
 	{
 		// Does NOT load recursively - only files in this folder
 		File[] f = new File(folderPath).listFiles();
+		String query = "SELECT MAX(INDEX) FROM Customers";
 		
 		for (int i = 0; i < f.length; i++)
         {
@@ -202,13 +203,12 @@ public class PhotoDB
 	{
 		Image image = null;
 		PreparedStatement stmt = null;
-		String query = "SELECT * FROM ? WHERE `?`=?";
+		String query = "SELECT * FROM " + tableName + " WHERE `"			//Table name has to be hardcoded
+				+ columnNames[primaryKey] + "`=?";							//can't insert column name as param, so it's here
 		
 		try {
 			stmt = conn.prepareStatement(query);
-			stmt.setString(1, tableName);
-			stmt.setString(2, columnNames[primaryKey]);
-			stmt.setObject(3, primaryKeyValue, columnTypes.get(columnNames[primaryKey]).getSqlType());
+			stmt.setObject(1, primaryKeyValue, columnTypes.get(columnNames[primaryKey]).getSqlType());
 			ResultSet rs = stmt.executeQuery();
 			
 			rs.next();														//Reading the image
@@ -216,7 +216,7 @@ public class PhotoDB
 			{
 				String colName = columnNames[i];
 				DataType type = columnTypes.get(colName);
-				if (colName.indexOf("thumb") == -1 && type == DataType.BIN_STREAM)
+				if (type == DataType.BIN_STREAM && colName.indexOf("thumb") == -1)
 				{
 					InputStream in = rs.getBinaryStream(i + 1);				//ResultSets start at 1!
 					image = ImageIO.read(in);
@@ -442,29 +442,16 @@ public class PhotoDB
         		stmt.setNull(index, type.getSqlType());
         		return;
         	}
-        	System.out.println(datum.getClass());
             switch (type)
             {
-                case INT:
-                    stmt.setInt(index, (Integer) datum);
-                    break;
+                case INT:					//"Simple" types can all be set using setObject()
                 case BOOLEAN:
-                    stmt.setBoolean(index, (Boolean) datum);
-                    break;
                 case LONG:
-                    stmt.setLong(index, (Long) datum);				//Long converts to BIGINT in database
-                    break;
                 case DOUBLE:
-                    stmt.setDouble(index, (Double) datum);
-                    break;
                 case STRING:
-                    stmt.setString(index, (String) datum);
-                    break;
                 case DATE:
-                    stmt.setDate(index, (Date) datum);
-                    break;
                 case TIME:
-                    stmt.setTime(index, (Time) datum);
+                    stmt.setObject(index, datum, type.getSqlType());
                     break;
                 case BIN_STREAM:
                     FileInputStream fis = null;
