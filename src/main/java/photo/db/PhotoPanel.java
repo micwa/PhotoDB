@@ -123,6 +123,8 @@ public class PhotoPanel extends JPanel
 		});
 	}
 	
+	// Attempts to connect to the database, and then loads up the thumbnail
+	// pane with whatever thumbnails it retrieves from the database
 	public void connectToDB()
 	{
 		db.connect();														//Connect and initialize the thumbnail pane with photos
@@ -132,7 +134,14 @@ public class PhotoPanel extends JPanel
 		right.setEnabled(true);
 	}
 	
-	private void initThumbPane()											//Load selection list
+	// Whenever the database is updated, call this method in order
+	// for the display to be updated.
+	//
+	// First, this method retrieves the photo properties; the thumbnails; and the
+	// unique keys. Then it creates the JPanel that will house the
+	// JScrollPane, creates it (scroll pane), and adds the the buttons
+	// made from the thumbnails one by one to the JPanel.
+	private void initThumbPane()	
 	{
 		db.retrievePhotoPropertiesOnly();									//Getting image thumbnails
 		thumbs = db.getPhotoThumbnails();
@@ -144,7 +153,7 @@ public class PhotoPanel extends JPanel
 		thumbPanel.setLayout(new BoxLayout(thumbPanel, BoxLayout.Y_AXIS));
 		thumbPanel.add(Box.createRigidArea(new Dimension(0, 5)));			//Initial space
 		
-		thumbScroll = new JScrollPane(thumbPanel);
+		thumbScroll = new JScrollPane(thumbPanel);							//ScrollPane
 		thumbScroll.setBackground(Color.WHITE);
 		thumbScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		add(thumbScroll, BorderLayout.WEST);
@@ -155,7 +164,7 @@ public class PhotoPanel extends JPanel
 			thumbButtons[i] = new JButton(new ImageIcon(thumbs[i]));
 			thumbButtons[i].setPreferredSize(new Dimension(100, 64));
 			thumbButtons[i].setBorder(BorderFactory.createEmptyBorder());
-			thumbButtons[i].setContentAreaFilled(false);
+			thumbButtons[i].setContentAreaFilled(false);					//Make the icon the only button
 			thumbButtons[i].setAlignmentX(Component.CENTER_ALIGNMENT);
 			thumbButtons[i].addActionListener(al);
 			
@@ -173,7 +182,16 @@ public class PhotoPanel extends JPanel
 		repaint();
 		
 		log.info("Loaded thumbnail pane");
-	}	
+	}
+	
+	// Disconnects from the database and deletes all temp files.
+	// It is not necessary to call this method unless there is no longer the need to
+	// call connectToDB() on this PhotoPanel anymore.
+	public void dispose()
+	{
+		db.disconnect();
+		db.deleteTempFiles();
+	}
 	
 	public void uploadPhotosIntoDB()
 	{
@@ -222,9 +240,7 @@ public class PhotoPanel extends JPanel
 		
 		// Since the photo in the thumbnail array corresponds to the unique
 		// key in the primary keys array, call getSpecificPhoto with that key
-		// by tracking the current index of the thumbnail array. There is no
-		// need to track the unique key this way - as long as the thumbnail array
-		// and photoKeys array match up, the index will "synchronize" both of them.
+		// by tracking the current index of the thumbnail array.
 		currPhoto = db.getSpecificPhoto(photoKeys[currIndex]);
 		updatePhotoProperties();
 		repaint();
@@ -293,11 +309,13 @@ public class PhotoPanel extends JPanel
 			else if (e.getSource() instanceof JButton)
 			{
 				for (int i = 0; i < thumbButtons.length; i++)
+				{
 					if (e.getSource() == thumbButtons[i])
 					{
 						showPhoto(i);
 						return;
 					}
+				}
 			}
 		}
 	}

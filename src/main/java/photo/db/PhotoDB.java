@@ -73,6 +73,9 @@ public class PhotoDB
     // Retrieved photos & properties
 	private File[] currPhotos;
 	private Properties[] currProps;
+	// Cached photos from getSpecificPhoto()
+	private ArrayList<File> cachedPhotos;
+	// Path where ALL temp photos are stored
 	private static final String TEMP_PATH = "temp135134";
 
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
@@ -103,6 +106,33 @@ public class PhotoDB
         this(hostname, DEFAULT_COL_NAMES, DEFAULT_COL_TYPES, 0);
 	}
 
+	/**
+	 * Initializes a new instance of this class and creates the temp directory
+	 * if it does not already exist.
+	 * 
+	 * @param hostname The hostname of the database
+	 * @param columnNames An array of Strings that exactly the match
+	 * the column names of the table intended to be accessed; the column names should also
+	 * be in the same order as the Strings in the array.
+	 * There are no restrictions on names, except that any column containing the substring
+	 * "thumb" in any (upper/lower) case will be construed as being the thumbnail column.
+	 * In the rare case that two (or more) columns contain "thumb", the first column
+	 * is assumed to be the thumbnail column.
+	 * 
+	 * @param columnTypes A HashMap<String, DataType> with
+	 * <code>columnNames.length</code> number of keys that correspond to the Strings in
+	 * columnNames, and respective DataTypes that correspond to the proper data type.
+	 * Restrictions: A maximum of two BIN_STREAM types can be set per row (i.e. the
+	 * BIN_STREAM representing the image and that representing the thumbnail).
+	 * Otherwise, only the first BIN_STREAM that is not in the thumbnail column will
+	 * be considered and later BIN_STREAMs in the same row will be ignored.
+	 * (this applies in retrievePhotos(), getSpecificPhoto(), getPhotoThumbnails())
+	 * 
+	 * @param uniqueKey The column of the key used to identify each row
+	 * in the table, where the first row is 0, the second row is 1, etc.
+	 * It must be properly set in order for getSpecificPhoto() to work, but it is
+	 * not necessary for retrievePhotos().
+	 */
     public PhotoDB(String hostname, String[] columnNames, HashMap<String, DataType> columnTypes, int uniqueKey)
     {
         this.columnNames = columnNames;
@@ -119,16 +149,24 @@ public class PhotoDB
 		
 		log.info("PhotoDB constructed");
     }
-	
-    // Connect to the database with its current settings;
-    // If PhotoDB is connected to a database, that connection
-    // will be terminated.
+
+    /**
+     * Connect to the database with its current settings; if PhotoDB is
+     * connected to a database, that connection will be terminated. All methods
+     * that access the database (loadFolder, insertRow, retrieve*, get*Photo*,
+     * getAllUniqueKeys()) will NOT work if this method is not called first.
+     *
+     * The photo cache for getSpecificPhoto() is also reset per connection
+     * (although if deleteTempFiles() is not called, those temp files will
+     * remain and be available for use by getSpecificPhoto()).
+     */
 	public void connect()
 	{
 	    try {
 	    	if (conn != null)
 				conn.close();
 	    	
+	    	cachedPhotos = new ArrayList<File>();
 	    	conn = DriverManager.getConnection(dbURLStart + dbHostname + "/" + dbName, user, password);
 	    	log.info("Connected to database");
 	    }
@@ -138,10 +176,29 @@ public class PhotoDB
 	    }
 	}
 	
-    // This method MUST be modified if one wants to use a custom table schema,
-    // or data will not be inserted correctly (e.g. change how unique key is derived).
-	//
-	// Currently, 
+	/**
+	 *  Manually disconnect from database and sets the current connection
+	 *  to null.
+	 */
+	public void disconnect()
+	{
+		try {
+	    	if (conn != null)
+				conn.close();
+	    	conn = null;
+	    }
+	    catch (SQLException e){
+	    	e.printStackTrace();
+	    	log.error("Error disconnecting to database");
+	    }
+	}
+	
+	/**
+	 * This method MUST be modified/overridden if one wants to use a custom table schema,
+     * or data will not be inserted correctly.
+     * 
+	 * @param folderPath the path to the folder, the photos in which will be uploaded 
+	 */
 	public void loadFolder(String folderPath)
 	{
 		// Does NOT load recursively - only files in this folder
@@ -175,20 +232,23 @@ public class PhotoDB
 		log.info("END: FOLDER LOAD");
 	}
 	
-	// INSERTS a row containing <code>data[]</code> into the database.
-	//
-	// The index of each object in data[] should correspond to the column in columnNames
-	// and each object's type the type in columnTypes;
-	// i.e. <code>data[i]</code> has data type <code>columnTypes.get(columnNames[i])</code>
-	//     DataType of column:		Type of data[i] expected:
-	// 		DataType.INT 		= 		Integer
-	//		DataType.BOOLEAN 	= 		Boolean
-	//		DataType.LONG 		= 		Long
-	//		DataType.DOUBLE 	= 		Double
-	//		DataType.STRING 	= 		String
-	//		DataType.DATE 		= 		java.sql.Date
-	//		DataType.TIME 		= 		java.sql.Time
-	// 		DataType.BIN_STREAM	=		java.io.File
+	/**
+	 * Inserts a row containing <code>data[]</code> into the database.
+	 * 
+	 * @param data The array of data to be inserted.
+	 * The index of each object in data[] should correspond to the column in columnNames
+	 * and each object's type the type in columnTypes;
+	 * i.e. <code>data[i]</code> has data type <code>columnTypes.get(columnNames[i])</code>
+	 *     DataType of column:		Type of data[i] expected:
+	 * 		DataType.INT 		= 		Integer
+	 *		DataType.BOOLEAN 	= 		Boolean
+	 *		DataType.LONG 		= 		Long
+	 *		DataType.DOUBLE 	= 		Double
+	 *		DataType.STRING 	= 		String
+	 *		DataType.DATE 		= 		java.sql.Date
+	 *		DataType.TIME 		= 		java.sql.Time
+	 * 		DataType.BIN_STREAM	=		java.io.File
+	 */
 	public void insertRow(Object[] data)
 	{
 		String query = "INSERT INTO " + tableName + " VALUES (?";
@@ -197,7 +257,6 @@ public class PhotoDB
         query += ")";
 
 		PreparedStatement stmt = null;
-		FileInputStream fis = null; 
 		
 		try {
             stmt = conn.prepareStatement(query);
@@ -217,9 +276,11 @@ public class PhotoDB
 	    }
 	}
 	
-	// Retrieves photos from database and writes them to the temp directory
-	// in the order that they were inserted into the database.
-	// This method retrieves and stores the photo properties as well.
+	/**
+	 * Retrieves photos from database and writes them to the temp directory
+	 * in the order that they were inserted into the database.
+	 * This method retrieves and stores the photo properties as well.
+	 */
 	public void retrievePhotos()
 	{
 		PreparedStatement stmt = null;
@@ -239,7 +300,7 @@ public class PhotoDB
 	        	{
 	        		Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
 	        		
-	        		// If it's the image, add path and skip settings properties
+	        		// If it's the image, add path and skip setting properties
 	        		if (obj instanceof File)
 	        		{
 	        			paths.add((File) obj);										//Add even if file exists already
@@ -247,7 +308,6 @@ public class PhotoDB
 	        		}
 	        		if (obj != null)
 	        			tempProp.setProperty(columnNames[i], obj.toString());
-	        		if (obj != null) log.info(obj.toString());
 	        	}
         		props.add(tempProp);
 	        }
@@ -261,7 +321,9 @@ public class PhotoDB
 		currProps = props.toArray(new Properties[props.size()]);
 	}
 	
-	// Basically retrievePhotos(), except it skips writing the images to disk
+	/**
+	 * Basically retrievePhotos(), except it skips writing the images to disk
+	 */
 	public void retrievePhotoPropertiesOnly()
 	{
 		PreparedStatement stmt = null;
@@ -287,7 +349,6 @@ public class PhotoDB
 	        		Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
 	        		if (obj != null)
 	        			tempProp.setProperty(columnNames[i], obj.toString());
-	        		log.info(obj.toString());
 	        	}
         		props.add(tempProp);
 	        }
@@ -298,7 +359,11 @@ public class PhotoDB
 		currProps = props.toArray(new Properties[props.size()]);
 	}
 
-	// Can only be called if retrievePhotos() has been called >=1 time
+	/**
+	 * Can only be called if retrievePhotos() has been called >=1 time
+	 * @return Image[] array, which contains photos that have been previously
+	 * written to disk.
+	 */
 	public Image[] getRetrievedPhotos()
 	{
 		Image[] imgs = new Image[currPhotos.length];
@@ -311,57 +376,110 @@ public class PhotoDB
 		return imgs;
 	}
 	
-	// Return the (canonical) PATHS to the images, not the images themselves
+	/**
+	 * Returns the (canonical) PATHS to the images, not the images themselves
+	 * @return
+	 */
 	public File[] getRetrievedPhotoPaths()
 	{
 		return currPhotos;
 	}
 	
-	// Can only be called if either retrievePhotos() or retrievePhotoPropertiesOnly() has been called >=1 time
+	/**
+	 * Can only be called if either retrievePhotos() or retrievePhotoPropertiesOnly() has been called >=1 time
+	 * @return
+	 */
 	public Properties[] getRetrievedPhotoProperties()						
 	{
 		return currProps;
 	}
 	
-	// THE unique key must be properly set in order for this method to work.
-	// Based on the <code>uniqueKeyValue</code>, selects a row (or rather, one
-	// column from the row) whose unique key value matches that value, and returns
-	// the photo stored in the select column.
-	//
-	// Note: Like retrievePhotos(), every time it retrieves a photo it writes it
-	// to the temp directory for caching purposes. HOWEVER, unlike retrievePhotos(),
-	// the file-writing is asynchronous so the image can be viewed before the stream
-	// writer finishes writing.
-	// ------------NOT IMPLEMENTED YET--------------
+	/**
+	 * (The unique key must be properly set in order for this method to work.)
+	 * Based on the <code>uniqueKeyValue</code>, selects a row whose unique key value
+	 * matches that value, and caches and returns the photo stored in that row.
+	 *
+	 * This ALSO caches the photo in the temp directory similarly to retrievePhotos().
+	 * However, unlike retrievePhotos(), the file-writing is asynchronous so the image
+	 * can be viewed before the stream writer finishes writing.
+	 *
+	 * Notes on the caching: this method will first determine if retrievePhotos() has been
+	 * called. If it has, it will use those cached photos and not do anything. If not,
+	 * it will determine whether that photo has already been cached during this connection,
+	 * and will use that cache if it has. Otherwise, it will attempt to write the file
+	 * to disk. (If a file with the same name already exists in the temp directory, it
+	 * will return an Image object of that file.)
+	 * 
+	 * @param uniqueKeyValue The value of the unique key for the photo that is
+	 * intended to be retrieved.
+	 * @return
+	 */
 	public Image getSpecificPhoto(Object uniqueKeyValue)
 	{
 		Image image = null;
 		PreparedStatement stmt = null;
-		
-		// Find the column that stores the image (binary stream) so we don't
-		// have to select the whole row and go through it later
-		String imgCol = "";
-		for (int i = 0; i < columnNames.length; i++)
-		{
-			String colName = columnNames[i];
-			DataType type = columnTypes.get(colName);
-			if (type == DataType.BIN_STREAM && colName.toLowerCase().indexOf("thumb") == -1)
-			{
-				imgCol = columnNames[i];
-				break;
-			}
-		}
-		String query = "SELECT `" + imgCol + "` FROM " + tableName + " WHERE `"			//Table name has to be hardcoded
+		String query = "SELECT * FROM " + tableName + " WHERE `"						//Table name has to be hardcoded
 				+ columnNames[uniqueKey] + "`=?";										//Can't insert column name as param, so it's here
 		
 		try {
 			stmt = conn.prepareStatement(query);
 			stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
 			ResultSet rs = stmt.executeQuery();
+			rs.next();
+			
+			// Get the filename first
+	    	String filename = rs.getObject(uniqueKey + 1).toString();
+	    	File file = new File(TEMP_PATH + "\\" + filename);
 
-			rs.next();														
-			InputStream in = rs.getBinaryStream(1);
-			image = ImageIO.read(in);
+	    	// If for some reason retrievePhotos() was called, use currPhotos
+	    	// -- Note: For this to work, the filename for the temp file should be
+	    	//		the same as in getPrepStatementParam()
+	    	if (currPhotos != null && currPhotos.length > 0)
+	    	{
+	    		for (int i = 0; i < currPhotos.length; i++)
+	    		{
+	    			if (file.equals(currPhotos[i]))
+	    			{
+	    				log.info(file.toString() + " taken from currPhotos cache");
+	    				return ImageIO.read(file);
+	    			}
+	    		}
+	    	}
+	    	
+	    	// Now check if the file had been cached by THIS method and not retrievePhotos()
+	    	if (cachedPhotos.contains(file))
+	    	{
+	    		log.info(file.toString() + " taken from cachedPhotos cache");
+				return ImageIO.read(file);
+	    	}
+	    	// If file's not in either of those arrays, then attempt to cache it
+	    	else
+	    	{
+	    		InputStream in = null;
+	    		int index = 1;												//Init at 1
+	    		
+	    		for (int i = 0; i < columnNames.length; i++)
+	    		{
+	    			String colName = columnNames[i];
+	    			DataType type = columnTypes.get(colName);
+	    			if (type == DataType.BIN_STREAM && colName.toLowerCase().indexOf("thumb") == -1)
+	    			{
+	    				index += i;
+	    				break;
+	    			}
+	    		}
+	    		// Start writing the image using a separate InputStream
+	    		// If the file already exists, the thread will terminate immediately
+	    		Thread t = new Thread(new StreamWriter(rs.getBinaryStream(index), file));
+	    		t.start();
+	    		
+	    		// Read the image
+	    		in = rs.getBinaryStream(index);
+	    		image = ImageIO.read(in);
+	    		
+	    		cachedPhotos.add(file);										//Add if already existed or not
+	    		log.info(file.toString() + " added to cachedPhotos");
+	    	}
 		} catch (Exception e ) {
 			e.printStackTrace();
 			log.error("ERROR retrieving photo with unique key value: " + uniqueKeyValue.toString());
@@ -369,12 +487,15 @@ public class PhotoDB
 		return image;
 	}
 	
-	// ASSUMING that the database contains thumbnail images AND a table column
-	// contains the substring "thumb" in upper or lowercase (or a mix), this
-	// method returns an array of those thumbnails in the order that they were
-	// inserted.
-	// Use this in conjunction with getSpecificPhoto() and retrievePhotoPropertiesOnly(),
-	// or use retrievePhotos() by itself.
+	/**
+	 * ASSUMING that the database contains thumbnail images AND a table column
+	 * contains the substring "thumb" in upper or lowercase (or a mix), this method
+	 * returns an array of those thumbnail images in the order that they were inserted.
+	 *
+	 * Use this in conjunction with getSpecificPhoto() and retrievePhotoPropertiesOnly(),
+	 * or use retrievePhotos() by itself.
+	 * @return
+	 */
 	public Image[] getPhotoThumbnails()
 	{
 		ArrayList<Image> thumbs = new ArrayList<Image>();
@@ -413,7 +534,9 @@ public class PhotoDB
 		return thumbs.toArray(new Image[thumbs.size()]);
 	}
 	
-	// Deletes all files in the temp directory PhotoDB created
+	/**
+	 * Deletes all files in the temp directory PhotoDB created
+	 */
 	public void deleteTempFiles()
 	{
 		File tempDir = new File(TEMP_PATH);
@@ -428,8 +551,11 @@ public class PhotoDB
 		}
 	}
 	
-	// Returns a COPY of the column names that have been set,
-	// and which should match the current table schema.
+	/**
+	 * Returns a COPY of the column names that have been set,
+	 * and which should match the current table schema.
+	 * @return
+	 */
     public String[] getColumnNames()
     {
     	String[] cols = new String[columnNames.length];
@@ -444,7 +570,10 @@ public class PhotoDB
     	this.columnNames = columnNames;
     }
     
-    // Returns a COPY of the mappings of column names and data types
+    /**
+     * Returns a COPY of the mappings of column names and data types
+     * @return
+     */
     public HashMap<String, DataType> getColumnTypes()
     {
     	HashMap<String, DataType> hash = new HashMap<String, DataType>();
@@ -459,8 +588,12 @@ public class PhotoDB
     	this.columnTypes = columnTypes;
     }
     
-    // Sets the column which contains the unique identifier for
-    // each row entry to uniqueKey; the first column corresponds to 0.
+    /**
+     * Sets the column which contains the unique key/identifier for
+     * each row to uniqueKey, where the first column corresponds to a unique
+     * key value of 0.
+     * @param uniqueKey The value of the unique key to be set
+     */
     public void setUniqueKey(int uniqueKey)
     {
         this.uniqueKey = uniqueKey;
@@ -471,9 +604,16 @@ public class PhotoDB
         return uniqueKey;
     }
     
-    // Returns an array of ALL unique keys for each row entry in the table,
-    // in the order in which they were inserted. Thus, the nth unique key will match
-    // the nth photo and thumbnail from getRetrievedPhotos() and getPhotoThumbnails().
+    /**
+     * Returns an array of ALL unique keys for each row entry in the table,
+     * in the order in which they were inserted. Thus, the nth unique key will match
+     * the nth photo and thumbnail from getRetrievedPhotos() and getPhotoThumbnails().
+     * 
+     * Note that if the database is updated after this method is called, the array
+     * will no longer be consistent with the entries in the database and this method
+     * will have to be called again.
+     * @return
+     */
     public Object[] getAllUniqueKeys()
     {
     	ArrayList<Object> objs = new ArrayList<Object>();
@@ -517,8 +657,16 @@ public class PhotoDB
 		this.password = password;
 	}
 	
-	// Sets the (index)th parameter in the PreparedStatement to <code>data</code>
-	// and ensures that it has the correct type since a <code>DataType</code> is also passed in.
+	/**
+	 * Sets the (index)th parameter in the PreparedStatement to <code>data</code>
+	 * and ensures that it has the correct type since a <code>DataType</code> is also passed in.
+	 * 
+	 * @param stmt The <code>PreparedStatement</code> to use
+	 * @param index The column index of the <code>PreparedStatement</code> to insert into
+	 * @param type The data type of the object to be inserted
+	 * @param datum The object to be set at column index <code>index</code>
+	 * @throws SQLException If object <code>datum</code> fails to be set
+	 */
     private void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum) throws SQLException
     {
     	// Datum may be null - just return immediately
@@ -567,15 +715,23 @@ public class PhotoDB
     	}
     }
     
-    // FOR all data types except DataType.BIN_STREAM, returns the Java object corresponding
-    // to the SQL type; for DataType.BIN_STREAM, this method writes the file to the temp directory
-    // (UNLESS the column name for that index contains "thumb", i.e. stores a thumbnail, in
-    // which case this method does nothing) and returns a java.io.File that refers to the
-    // written file. The thread that writes the file is NOT asynchronous (i.e. the write will
-    // complete before an object is returned).
-    //
-    // Note: The type of the returned object *should* be the same as the type that was
-    // inserted at the (index)th column. Still, cast at your discretion :)
+    /**
+     * For all data types except DataType.BIN_STREAM, this method returns the Java object corresponding
+     * to the SQL type; for DataType.BIN_STREAM, this method writes the file to the temp directory
+     * (UNLESS the column name for that index contains "thumb", i.e. stores a thumbnail, in
+     * which case this method does nothing) and returns a java.io.File that refers to the
+     * written file. The thread that writes the file is NOT asynchronous.
+     *
+     * Note: The type of the returned object *should* be the same as the type that was
+     * inserted at the (index)th column. Still, cast at your discretion :)
+     * 
+     * @param rs The <code>ResultSet</code> to get the object from
+     * @param index The column index of the <code>ResultSet</code> to obtain an object from
+     * @param type The data type of the obtained object - only used to distinguish between
+     * DataType.BIN_STREAM and other objects
+     * @return
+     * @throws SQLException If there is a problem getting an object from the <code>ResultSet</code>
+     */
     private Object getResultSetParam(ResultSet rs, int index, DataType type) throws SQLException
     {
     	switch (type)
@@ -595,7 +751,6 @@ public class PhotoDB
             	
             	// Get the file and InputStream ready for the StreamWriter
             	String filename = rs.getObject(uniqueKey + 1).toString();
-            	filename += filename.hashCode();							//Filename = the value of the unique key + simple hash
             	InputStream in = rs.getBinaryStream(index);
             	File file = new File(TEMP_PATH + "\\" + filename);
             	
@@ -633,8 +788,10 @@ public class PhotoDB
 			this.file = file;
 		}
 		
-		// If the file does not exist, writes the file to disk; otherwise, this
-		// method does nothing
+		/**
+		 * If the file does not exist, writes the file to disk; otherwise, this
+		 * method does nothing
+		 */
 		public void run()
 		{
 			if (!file.exists())

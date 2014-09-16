@@ -128,7 +128,15 @@ public class PhotoViewer extends JFrame
 		log.info("Menu initialized");
 	}
 	
-	// Gets the inputted settings from the settings dialog and calls PhotoPanel
+	// Override dispose() so that PhotoPanel can be disposed of also,
+	// mostly to delete the temp files and close the connection
+	public void dispose()
+	{
+		super.dispose();
+		photoPanel.dispose();
+	}
+	
+	// Gets the inputed settings from the settings dialog and calls PhotoPanel
 	// to update them in PhotoDB
 	public void updateSettingsFromDialog()
 	{
