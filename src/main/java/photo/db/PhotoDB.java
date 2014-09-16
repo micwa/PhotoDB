@@ -1,3 +1,21 @@
+/**
+ * PhotoDB - MySQL client/GUI for accessing photo databases
+ * 
+ * Copyright (C) 2014 by Michael Wang
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *   
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>. 
+ */
 package photo.db;
 
 import java.awt.Color;
@@ -10,6 +28,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -158,7 +177,7 @@ public class PhotoDB
 	// The index of each object in data[] should correspond to the column in columnNames
 	// and each object's type the type in columnTypes;
 	// i.e. <code>data[i]</code> has data type <code>columnTypes.get(columnNames[i])</code>
-	//     DataType of column:		Type of data[i]:
+	//     DataType of column:		Type of data[i] expected:
 	// 		DataType.INT 		= 		Integer
 	//		DataType.BOOLEAN 	= 		Boolean
 	//		DataType.LONG 		= 		Long
@@ -259,7 +278,8 @@ public class PhotoDB
 		return thumbs;
 	}
 	
-	//Retrieves photos from database and writes them to the temp directory
+	// Retrieves photos from database and writes them to the temp directory,
+	// and retrieves and stores the photo properties as well
 	public void retrievePhotos()
 	{
 		Statement stmt = null;
@@ -270,48 +290,34 @@ public class PhotoDB
 			stmt = conn.createStatement();
 	        ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName);						//Getting rows from table
 	        
-	        while (rs.next()) {
-	        	int index = rs.getInt(1);									//Getting properties info
-	        	String filename = rs.getString(2);
-	        	String format = rs.getString(3);
-	        	String descrip = rs.getString(4);
-	        	int size = rs.getInt(5);
-	        		        	
-	        	File tempFile = new File(TEMP_PATH + "\\" + filename);
+	        while (rs.next())
+	        {
+	        	Properties tempProp = new Properties();
 	        	
-	        	paths.add(tempFile);										//Add even if file exists already
-        		Properties tempProp = new Properties();
-        		tempProp.setProperty("index", index + "");
-        		tempProp.setProperty("filename", filename);
-        		tempProp.setProperty("format",  format);
-        		tempProp.setProperty("description", descrip);
-        		tempProp.setProperty("size",  size + "");
-        		props.add(tempProp);
-	        	
-	        	if (!tempFile.exists())										//In case temp files did not delete
+	        	for (int i = 0; i < columnNames.length; i++)
 	        	{
-	        		InputStream in = rs.getBinaryStream(6);
-	        		OutputStream os = null;
+	        		Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
 	        		
-	        		try {
-	        			os = new FileOutputStream(tempFile);				//Writing the image to disk
-	        			int c = 0;
-	        			while ((c = in.read()) != -1)
-	        				os.write(c);
-	        			
-	        			log.info(filename + " written to disk");
-	        		} catch (IOException e) {e.printStackTrace();}
+	        		// If it's the image, add path and skip settings properties
+	        		if (obj instanceof File)
+	        		{
+	        			paths.add((File) obj);										//Add even if file exists already
+	        			continue;
+	        		}
+	        		if (obj != null)
+	        			tempProp.setProperty(columnNames[i], obj.toString());
+	        		log.info(obj.toString());
 	        	}
+        		props.add(tempProp);
 	        }
 	    } catch (SQLException e ) {
 	    	e.printStackTrace();
 	        log.error("ERROR retrieving");
-	    } finally { 
-	    	try { if (stmt != null) stmt.close();} catch (SQLException e) {}
 	    }
+		
+		// Store photo file paths - return Image[] in getRetrievedPhotos()
 		currPhotos = new File[paths.size()];
 		currProps = new Properties[props.size()];
-		
 		for (int i = 0; i < currPhotos.length; i++)
 		{
 			currPhotos[i] = paths.get(i);
@@ -319,7 +325,7 @@ public class PhotoDB
 		}
 	}
 	
-	//Retrieves photo properties from database
+	// Basically retrievePhotos(), except it skips writing the images to disk
 	public void retrievePhotoPropertiesOnly()
 	{
 		Statement stmt = null;
@@ -329,26 +335,28 @@ public class PhotoDB
 			stmt = conn.createStatement();
 	        ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName);						//Getting rows from table
 	        
-	        while (rs.next()) {
-	        	int index = rs.getInt(1);									//Getting properties info
-	        	String filename = rs.getString(2);
-	        	String format = rs.getString(3);
-	        	String descrip = rs.getString(4);
-	        	int size = rs.getInt(5);
-	        		        	
-        		Properties tempProp = new Properties();
-        		tempProp.setProperty("index", index + "");
-        		tempProp.setProperty("filename", filename);
-        		tempProp.setProperty("format",  format);
-        		tempProp.setProperty("description", descrip);
-        		tempProp.setProperty("size",  size + "");
+	        while (rs.next()) 
+	        {
+	        	Properties tempProp = new Properties();
+	        	
+	        	for (int i = 0; i < columnNames.length; i++)
+	        	{
+	        		DataType type = columnTypes.get(columnNames[i]);
+	        		
+	        		//Skip BIN_STREAMs since they aren't properties
+	        		if (type == DataType.BIN_STREAM)
+	        			continue;
+	        		
+	        		Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
+	        		if (obj != null)
+	        			tempProp.setProperty(columnNames[i], obj.toString());
+	        		log.info(obj.toString());
+	        	}
         		props.add(tempProp);
 	        }
 	    } catch (SQLException e ) {
 	    	e.printStackTrace();
 	        log.error("ERROR retrieving");
-	    } finally {
-	    	try { if (stmt != null) stmt.close();} catch (SQLException e) {}
 	    }
 		currProps = new Properties[props.size()];
 		
@@ -433,55 +441,100 @@ public class PhotoDB
 	
 	// Sets the (index)th parameter in the PreparedStatement to <code>data</code>
 	// and ensures that it has the correct type since a <code>DataType</code> is also passed in
-    private void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum)
+    private void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum) throws SQLException
     {
-        try {
-        	// Allow null datum - just return immediately
-        	if (datum == null)
-        	{
-        		stmt.setNull(index, type.getSqlType());
-        		return;
-        	}
-            switch (type)
-            {
-                case INT:					//"Simple" types can all be set using setObject()
-                case BOOLEAN:
-                case LONG:
-                case DOUBLE:
-                case STRING:
-                case DATE:
-                case TIME:
-                    stmt.setObject(index, datum, type.getSqlType());
-                    break;
-                case BIN_STREAM:
-                    FileInputStream fis = null;
+    	// Allow null datum - just return immediately
+    	if (datum == null)
+    	{
+    		stmt.setNull(index, type.getSqlType());
+    		return;
+    	}
+    	switch (type)
+    	{
+    	case INT:					//"Simple" types can all be set using setObject()
+    	case BOOLEAN:
+    	case LONG:
+    	case DOUBLE:
+    	case STRING:
+    	case DATE:
+    	case TIME:
+    		stmt.setObject(index, datum, type.getSqlType());
+    		break;
+    	case BIN_STREAM:
+    		FileInputStream fis = null;
+
+    		try {
+				fis = new FileInputStream((File) datum);
+				
+				// Photo-specific - if a column name contains the substring "thumb",
+	    		// assume that it intends to store thumbnails
+	    		if (columnNames[index - 1].toLowerCase().indexOf("thumb") > -1)
+	    		{
+	    			BufferedImage image = ImageIO.read(fis);
+	    			int w = image.getWidth() * 64 / image.getHeight(), h = 64;
+	    			BufferedImage buff = resizeImage(image, w, h);
+
+	    			ByteArrayOutputStream os = new ByteArrayOutputStream();
+	    			ImageIO.write(buff,"jpg", os); 
+	    			InputStream in = new ByteArrayInputStream(os.toByteArray());
+	    			stmt.setBinaryStream(index, in);
+	    		}
+	    		else
+	    			stmt.setBinaryStream(index, fis, ((File) datum).length());
+			} catch (IOException e) {e.printStackTrace();}
+    		break;
+    	default:
+    		log.error("Data type not supported");
+    		break;
+    	}
+    }
     
-                    fis = new FileInputStream((File) datum);								//Inputting the blob
-                    
-                    // Photo-specific - if a column name contains the substring "thumb",
-                    // assume that it intends to store thumbnails
-                    if (columnNames[index - 1].toLowerCase().indexOf("thumb") > -1)
-                    {
-                        BufferedImage image = ImageIO.read(fis);
-                        int w = image.getWidth() * 64 / image.getHeight(), h = 64;
-                        BufferedImage buff = resizeImage(image, w, h);
-                        
-                        ByteArrayOutputStream os = new ByteArrayOutputStream();
-                        ImageIO.write(buff,"jpg", os); 
-                        InputStream in = new ByteArrayInputStream(os.toByteArray());
-                        stmt.setBinaryStream(index, in);
-                    }
-                    else
-                        stmt.setBinaryStream(index, fis, ((File) datum).length());
-                    break;
-                default:
-                    log.error("Data type not supported");
-                    break;
-            }
-        } catch (Exception e) {
-			e.printStackTrace();
-	        log.error("ERROR setting PreparedStatement value");
-	    }
+    // For all data types except DataType.BIN_STREAM, returns the Java object corresponding
+    // to the SQL type; for BIN_STREAM, this method writes the file to the temp directory
+    // (UNLESS the column name for that index contains "thumb", i.e. stores a thumbnail)
+    // and returns a java.io.File that refers to the written file
+    private Object getResultSetParam(ResultSet rs, int index, DataType type) throws SQLException
+    {
+    	switch (type)
+        {
+            case INT:			
+            case BOOLEAN:
+            case LONG:
+            case DOUBLE:
+            case STRING:
+            case DATE:
+            case TIME:
+            	return rs.getObject(index);
+            case BIN_STREAM:
+            	// If it is the thumbnail column, don't write anything to disk return null
+            	if (columnNames[index - 1].toLowerCase().indexOf("thumb") > -1)
+            		return null;
+            	
+            	// Filename = the value of the primary key + simple hash
+            	String filename = rs.getObject(primaryKey + 1).toString();
+            	filename += filename.hashCode() + "";
+            	File tempFile = new File(TEMP_PATH + "\\" + filename);
+            	
+            	// If tempFile isn't written to temp already, write it
+	        	if (!tempFile.exists())
+	        	{
+	        		InputStream in = rs.getBinaryStream(index);
+	        		OutputStream os = null;
+	        		
+	        		try {
+	        			os = new FileOutputStream(tempFile);				//Writing the image to disk
+	        			int c = 0;
+	        			while ((c = in.read()) != -1)
+	        				os.write(c);
+	        			
+	        			log.info(filename + " written to disk");
+	        		} catch (IOException e) {e.printStackTrace();}
+	        	}
+	        	return tempFile;
+            default:
+                log.error("Data type not supported");
+                return null;
+        }
     }
 
 	private BufferedImage resizeImage(Image img, int width, int height)

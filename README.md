@@ -14,7 +14,11 @@ More documentation to come later.
 An executable JAR file is included. The .jar was compiled with JDK 1.7
 (javac version 1.7.0_67) and requires JRE 7 at minimum to run. 
 
-If Java is not up to date or missing, one can download it at [Oracle's website] (http://www.oracle.com/technetwork/java/javase/downloads/index.html).
+If Java is not up to date or missing, download it at [Oracle's website] (http://www.oracle.com/technetwork/java/javase/downloads/index.html).
+
+## License
+
+This software is released under the [GPLv3 license] (http://www.gnu.org/copyleft/gpl.html).
 
 ## Bugs/TODO
 
