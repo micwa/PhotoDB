@@ -46,6 +46,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 import javax.imageio.ImageIO;
@@ -139,6 +140,8 @@ public class PhotoDB
 	
     // This method MUST be modified if one wants to use a custom table schema,
     // or data will not be inserted correctly (e.g. change how unique key is derived).
+	//
+	// Currently, 
 	public void loadFolder(String folderPath)
 	{
 		// Does NOT load recursively - only files in this folder
@@ -214,82 +217,19 @@ public class PhotoDB
 	    }
 	}
 	
-	// THE unique key must be properly set in order for this method to work.
-	//
-	// Based on the <code>uniqueKeyValue</code>, selects a row whose unique key
-	// value matches that value, and returns the photo stored in that row.
-	public Image getSpecificPhoto(Object uniqueKeyValue)
-	{
-		Image image = null;
-		PreparedStatement stmt = null;
-		String query = "SELECT * FROM " + tableName + " WHERE `"			//Table name has to be hardcoded
-				+ columnNames[uniqueKey] + "`=?";							//can't insert column name as param, so it's here
-		
-		try {
-			stmt = conn.prepareStatement(query);
-			stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
-			ResultSet rs = stmt.executeQuery();
-			
-			rs.next();														//Reading the image
-			for (int i = 0; i < columnNames.length; i++)					//Loop through columns to find image (desired) column
-			{
-				String colName = columnNames[i];
-				DataType type = columnTypes.get(colName);
-				if (type == DataType.BIN_STREAM && colName.indexOf("thumb") == -1)
-				{
-					InputStream in = rs.getBinaryStream(i + 1);				//ResultSets start at 1!
-					image = ImageIO.read(in);
-				}
-			}
-		} catch (Exception e ) {
-	    	e.printStackTrace();
-	        log.error("ERROR retrieving photo with unique key value: " + uniqueKeyValue);
-	    }
-		return image;
-	}
-	
-	public Image[] getPhotoThumbnails()
-	{
-		Image[] thumbs = null;
-		Statement stmt = null;
-		
-		try {
-			stmt = conn.createStatement();
-			ResultSet rows = stmt.executeQuery("SELECT COUNT(*) FROM " + tableName);
-			rows.next();
-			int numRows = rows.getInt(1);
-			thumbs = new Image[numRows];
-			
-			for (int i = 0; i < numRows; i++)
-			{
-				ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName + " WHERE `index`=" + i);
-				
-				rs.next();														//Reading the image
-				InputStream in = rs.getBinaryStream(7);	
-				thumbs[i] = ImageIO.read(in);	
-			}
-		} catch (Exception e ) {
-	    	e.printStackTrace();
-	        log.error("ERROR retrieving thumbnails");
-	    } finally {
-	    	try { if (stmt != null) stmt.close();} catch (SQLException e) {}
-	    }
-		
-		return thumbs;
-	}
-	
 	// Retrieves photos from database and writes them to the temp directory
 	// in the order that they were inserted into the database.
 	// This method retrieves and stores the photo properties as well.
 	public void retrievePhotos()
 	{
-		Statement stmt = null;
+		PreparedStatement stmt = null;
+		String query = "SELECT * FROM " + tableName;
 		ArrayList<File> paths = new ArrayList<File>();
 		ArrayList<Properties> props = new ArrayList<Properties>();
 		
 		try {
-			stmt = conn.createStatement();
-	        ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName);						//Getting rows from table
+			stmt = conn.prepareStatement(query);
+	        ResultSet rs = stmt.executeQuery();						//Getting rows from table
 	        
 	        while (rs.next())
 	        {
@@ -307,34 +247,30 @@ public class PhotoDB
 	        		}
 	        		if (obj != null)
 	        			tempProp.setProperty(columnNames[i], obj.toString());
-	        		log.info(obj.toString());
+	        		if (obj != null) log.info(obj.toString());
 	        	}
         		props.add(tempProp);
 	        }
 	    } catch (SQLException e ) {
 	    	e.printStackTrace();
-	        log.error("ERROR retrieving");
+	        log.error("ERROR retrieving photos");
 	    }
 		
 		// Store photo file paths - return Image[] in getRetrievedPhotos()
-		currPhotos = new File[paths.size()];
-		currProps = new Properties[props.size()];
-		for (int i = 0; i < currPhotos.length; i++)
-		{
-			currPhotos[i] = paths.get(i);
-			currProps[i] = props.get(i);
-		}
+		currPhotos = paths.toArray(new File[paths.size()]);
+		currProps = props.toArray(new Properties[props.size()]);
 	}
 	
 	// Basically retrievePhotos(), except it skips writing the images to disk
 	public void retrievePhotoPropertiesOnly()
 	{
-		Statement stmt = null;
+		PreparedStatement stmt = null;
+		String query = "SELECT * FROM " + tableName;
 		ArrayList<Properties> props = new ArrayList<Properties>();
 		
 		try {
-			stmt = conn.createStatement();
-	        ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName);						//Getting rows from table
+			stmt = conn.prepareStatement(query);
+	        ResultSet rs = stmt.executeQuery();						//Getting rows from table
 	        
 	        while (rs.next()) 
 	        {
@@ -357,16 +293,26 @@ public class PhotoDB
 	        }
 	    } catch (SQLException e ) {
 	    	e.printStackTrace();
-	        log.error("ERROR retrieving");
+	        log.error("ERROR retrieving photo properties");
 	    }
-		currProps = new Properties[props.size()];
-		
-		for (int i = 0; i < currProps.length; i++)
-			currProps[i] = props.get(i);
+		currProps = props.toArray(new Properties[props.size()]);
 	}
 
-	//Can only be called if retrievePhotos() has been called >=1 time
-	public File[] getRetrievedPhotos()
+	// Can only be called if retrievePhotos() has been called >=1 time
+	public Image[] getRetrievedPhotos()
+	{
+		Image[] imgs = new Image[currPhotos.length];
+		
+		try {
+			for (int i = 0; i < imgs.length; i++)
+				imgs[i] = ImageIO.read(currPhotos[i]);
+		} catch (IOException e) { e.printStackTrace(); }
+		
+		return imgs;
+	}
+	
+	// Return the (canonical) PATHS to the images, not the images themselves
+	public File[] getRetrievedPhotoPaths()
 	{
 		return currPhotos;
 	}
@@ -375,6 +321,96 @@ public class PhotoDB
 	public Properties[] getRetrievedPhotoProperties()						
 	{
 		return currProps;
+	}
+	
+	// THE unique key must be properly set in order for this method to work.
+	// Based on the <code>uniqueKeyValue</code>, selects a row (or rather, one
+	// column from the row) whose unique key value matches that value, and returns
+	// the photo stored in the select column.
+	//
+	// Note: Like retrievePhotos(), every time it retrieves a photo it writes it
+	// to the temp directory for caching purposes. HOWEVER, unlike retrievePhotos(),
+	// the file-writing is asynchronous so the image can be viewed before the stream
+	// writer finishes writing.
+	// ------------NOT IMPLEMENTED YET--------------
+	public Image getSpecificPhoto(Object uniqueKeyValue)
+	{
+		Image image = null;
+		PreparedStatement stmt = null;
+		
+		// Find the column that stores the image (binary stream) so we don't
+		// have to select the whole row and go through it later
+		String imgCol = "";
+		for (int i = 0; i < columnNames.length; i++)
+		{
+			String colName = columnNames[i];
+			DataType type = columnTypes.get(colName);
+			if (type == DataType.BIN_STREAM && colName.toLowerCase().indexOf("thumb") == -1)
+			{
+				imgCol = columnNames[i];
+				break;
+			}
+		}
+		String query = "SELECT `" + imgCol + "` FROM " + tableName + " WHERE `"			//Table name has to be hardcoded
+				+ columnNames[uniqueKey] + "`=?";										//Can't insert column name as param, so it's here
+		
+		try {
+			stmt = conn.prepareStatement(query);
+			stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
+			ResultSet rs = stmt.executeQuery();
+
+			rs.next();														
+			InputStream in = rs.getBinaryStream(1);
+			image = ImageIO.read(in);
+		} catch (Exception e ) {
+			e.printStackTrace();
+			log.error("ERROR retrieving photo with unique key value: " + uniqueKeyValue.toString());
+		}
+		return image;
+	}
+	
+	// ASSUMING that the database contains thumbnail images AND a table column
+	// contains the substring "thumb" in upper or lowercase (or a mix), this
+	// method returns an array of those thumbnails in the order that they were
+	// inserted.
+	// Use this in conjunction with getSpecificPhoto() and retrievePhotoPropertiesOnly(),
+	// or use retrievePhotos() by itself.
+	public Image[] getPhotoThumbnails()
+	{
+		ArrayList<Image> thumbs = new ArrayList<Image>();
+		PreparedStatement stmt = null;
+		
+		// Same as in getSpecificPhoto(), except you WANT the thumbnail
+		// and ALL rows are selected through the query
+		String thumbCol = "";
+		for (int i = 0; i < columnNames.length; i++)
+		{
+			String colName = columnNames[i];
+			DataType type = columnTypes.get(colName);
+			if (type == DataType.BIN_STREAM && colName.toLowerCase().indexOf("thumb") > -1)
+			{
+				thumbCol = columnNames[i];
+				break;
+			}
+		}
+		String query = "SELECT `" + thumbCol + "` FROM " + tableName;
+
+		try {
+			stmt = conn.prepareStatement(query);
+			log.info(stmt);
+			ResultSet rs = stmt.executeQuery();
+			
+			while (rs.next())
+			{
+				InputStream in = rs.getBinaryStream(1);
+				thumbs.add(ImageIO.read(in));
+			}
+		} catch (Exception e ) {
+			e.printStackTrace();
+			log.error("ERROR retrieving thumbnails");
+		}
+
+		return thumbs.toArray(new Image[thumbs.size()]);
 	}
 	
 	// Deletes all files in the temp directory PhotoDB created
@@ -392,10 +428,14 @@ public class PhotoDB
 		}
 	}
 	
-	// Returns the array of the column names that has been set,
+	// Returns a COPY of the column names that have been set,
 	// and which should match the current table schema.
     public String[] getColumnNames()
     {
+    	String[] cols = new String[columnNames.length];
+    	for (int i = 0; i < cols.length; i++)
+    		cols[i] = columnNames[i];
+    	
         return columnNames;
     }
     
@@ -404,9 +444,13 @@ public class PhotoDB
     	this.columnNames = columnNames;
     }
     
-    // Returns the mappings of column names and data types
+    // Returns a COPY of the mappings of column names and data types
     public HashMap<String, DataType> getColumnTypes()
     {
+    	HashMap<String, DataType> hash = new HashMap<String, DataType>();
+    	for (Map.Entry<String, DataType> entry : hash.entrySet())
+    		hash.put(entry.getKey(), entry.getValue());
+    	
     	return columnTypes;
     }
     
@@ -432,11 +476,20 @@ public class PhotoDB
     // the nth photo and thumbnail from getRetrievedPhotos() and getPhotoThumbnails().
     public Object[] getAllUniqueKeys()
     {
-    	Object[] objs = null;
-    	Statement stmt = null;
-    	String query = "SELECT " + columnNames[uniqueKey] + " FROM " + tableName;
-    	
-    	return objs;
+    	ArrayList<Object> objs = new ArrayList<Object>();
+    	PreparedStatement stmt = null;
+    	String query = "SELECT `" + columnNames[uniqueKey] + "` FROM " + tableName;
+
+    	try {
+    		stmt = conn.prepareStatement(query);
+    		ResultSet rs = stmt.executeQuery();
+
+    		while (rs.next())
+    			objs.add(rs.getObject(1));
+    		
+    	} catch (SQLException e) { e.printStackTrace(); }
+
+    	return objs.toArray();
     }
 	
 	public void setHostname(String hostname)
@@ -506,7 +559,7 @@ public class PhotoDB
 	    		}
 	    		else
 	    			stmt.setBinaryStream(index, fis, ((File) datum).length());
-			} catch (IOException e) {e.printStackTrace();}
+			} catch (IOException e) { e.printStackTrace(); }
     		break;
     	default:
     		log.error("Data type not supported");
@@ -518,7 +571,8 @@ public class PhotoDB
     // to the SQL type; for DataType.BIN_STREAM, this method writes the file to the temp directory
     // (UNLESS the column name for that index contains "thumb", i.e. stores a thumbnail, in
     // which case this method does nothing) and returns a java.io.File that refers to the
-    // written file. 
+    // written file. The thread that writes the file is NOT asynchronous (i.e. the write will
+    // complete before an object is returned).
     //
     // Note: The type of the returned object *should* be the same as the type that was
     // inserted at the (index)th column. Still, cast at your discretion :)
@@ -539,27 +593,19 @@ public class PhotoDB
             	if (columnNames[index - 1].toLowerCase().indexOf("thumb") > -1)
             		return null;
             	
-            	// Filename = the value of the unique key + simple hash
+            	// Get the file and InputStream ready for the StreamWriter
             	String filename = rs.getObject(uniqueKey + 1).toString();
-            	filename += filename.hashCode() + "";
-            	File tempFile = new File(TEMP_PATH + "\\" + filename);
+            	filename += filename.hashCode();							//Filename = the value of the unique key + simple hash
+            	InputStream in = rs.getBinaryStream(index);
+            	File file = new File(TEMP_PATH + "\\" + filename);
             	
-            	// If tempFile isn't written to temp already, write it
-	        	if (!tempFile.exists())
-	        	{
-	        		InputStream in = rs.getBinaryStream(index);
-	        		OutputStream os = null;
-	        		
-	        		try {
-	        			os = new FileOutputStream(tempFile);				//Writing the image to disk
-	        			int c = 0;
-	        			while ((c = in.read()) != -1)
-	        				os.write(c);
-	        			
-	        			log.info(filename + " written to disk");
-	        		} catch (IOException e) {e.printStackTrace();}
-	        	}
-	        	return tempFile;
+            	Thread t = new Thread(new StreamWriter(in, file));
+            	t.start();
+				try {
+					t.join();												//Wait for this thread - not async
+				} catch (InterruptedException e) { e.printStackTrace(); }										
+            	
+	        	return file;
             default:
                 log.error("Data type not supported");
                 return null;
@@ -574,5 +620,35 @@ public class PhotoDB
 		g2d.dispose();
 		
 		return buff;
+	}
+	
+	private class StreamWriter implements Runnable
+	{
+		private InputStream in;
+		private File file;
+		
+		public StreamWriter(InputStream in, File file)
+		{
+			this.in = in;
+			this.file = file;
+		}
+		
+		// If the file does not exist, writes the file to disk; otherwise, this
+		// method does nothing
+		public void run()
+		{
+			if (!file.exists())
+	    	{
+	    		OutputStream os = null;
+	    		try {
+	    			os = new FileOutputStream(file);				//Writing the stream to disk
+	    			int c = 0;
+	    			while ((c = in.read()) != -1)
+	    				os.write(c);
+
+	    			log.info(file.getCanonicalFile() + " written to disk");
+	    		} catch (IOException e) { e.printStackTrace(); }
+	    	}
+		}
 	}
 }

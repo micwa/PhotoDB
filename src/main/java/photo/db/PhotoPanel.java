@@ -58,14 +58,21 @@ public class PhotoPanel extends JPanel
 {
 	private PhotoDB db;
 	
-	private JPanel south;													//South items
+	// South panel
+	private JPanel south;	
 	private JButton left, right;
+	private JLabel props;
+	private JScrollPane propScroll;
+	
+	// Thumbpane
 	private JPanel thumbPanel; 
 	private Image[] thumbs;
 	private JButton[] thumbButtons;
-	private JScrollPane thumbScroll, propScroll;
-	private JLabel props;
+	private JScrollPane thumbScroll;
 	
+	// Stores all unique keys for the photos
+	private Object[] photoKeys;
+	// The current photo, and the current index for the thumbnail array
 	private Image currPhoto;
 	private int currIndex = -1;
 	
@@ -114,8 +121,6 @@ public class PhotoPanel extends JPanel
 				repaint();
 			}
 		});
-		
-		//log.info("South panel initialized");
 	}
 	
 	public void connectToDB()
@@ -125,13 +130,13 @@ public class PhotoPanel extends JPanel
 		
 		left.setEnabled(true);												//Show image view and view the first photo
 		right.setEnabled(true);
-		showPhoto(0);
 	}
 	
 	private void initThumbPane()											//Load selection list
 	{
-		db.retrievePhotoPropertiesOnly();										//Getting image thumbnails
+		db.retrievePhotoPropertiesOnly();									//Getting image thumbnails
 		thumbs = db.getPhotoThumbnails();
+		photoKeys = db.getAllUniqueKeys();
 		thumbButtons = new JButton[thumbs.length];
 		
 		thumbPanel = new JPanel();											//Setting up pane on left
@@ -157,6 +162,10 @@ public class PhotoPanel extends JPanel
 			thumbPanel.add(thumbButtons[i]);
 			thumbPanel.add(Box.createRigidArea(new Dimension(0, 5)));
 		}
+		
+		// By default, show the first photo (if there is any)
+		if (thumbButtons.length != 0)
+			showPhoto(0);
 		
 		thumbPanel.revalidate();
 		thumbPanel.repaint();
@@ -184,24 +193,39 @@ public class PhotoPanel extends JPanel
 			log.info("Upload canceled");
 	}
 	
-	public void showPhoto(int index)										//Sets current index to index, gets the photo from the database, calls repaint()
+	// Sets the current photo to the (index+1)th photo in the database;
+	// draws a border around that photo's thumbnail; and calls repaint();
+	//
+	// @pre a photo at row <code>index+1</code> must exist in the database
+	// (or else there will be an ArrayOutOfBoundsException)
+	public void showPhoto(int index)				
 	{		
-		if (thumbButtons.length == 0 || index == currIndex)
+		// No need to continue if same picture is clicked on twice
+		if (index == currIndex)
 			return;
 		
 		int prevIndex = currIndex;
 		currIndex = index;
-		if (currIndex >= thumbButtons.length)								//No more next/prevPhoto()
+		
+		// Wrap around if past the end/start
+		if (currIndex >= thumbButtons.length)	
 			currIndex = 0;
 		if (currIndex < 0)
 			currIndex = thumbButtons.length - 1;
 		
-		Border border = new LineBorder(Color.BLUE, 3);						//Remove last border and add to newly clicked
+		// Remove last border if prevIndex is valid
 		if (prevIndex != -1)
 			thumbButtons[prevIndex].setBorder(BorderFactory.createEmptyBorder());
+		// Add new border
+		Border border = new LineBorder(Color.BLUE, 3);
 		thumbButtons[currIndex].setBorder(border);
 		
-		currPhoto = db.getSpecificPhoto(currIndex);
+		// Since the photo in the thumbnail array corresponds to the unique
+		// key in the primary keys array, call getSpecificPhoto with that key
+		// by tracking the current index of the thumbnail array. There is no
+		// need to track the unique key this way - as long as the thumbnail array
+		// and photoKeys array match up, the index will "synchronize" both of them.
+		currPhoto = db.getSpecificPhoto(photoKeys[currIndex]);
 		updatePhotoProperties();
 		repaint();
 	}
