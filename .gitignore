@@ -2,3 +2,6 @@
 /logs
 .settings
 /src/test
+pom.xml
+.classpath
+.project
