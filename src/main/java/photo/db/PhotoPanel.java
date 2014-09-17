@@ -30,7 +30,10 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.io.File;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Date;
+import java.util.HashMap;
 import java.util.Properties;
 
 import javax.swing.BorderFactory;
@@ -75,8 +78,22 @@ public class PhotoPanel extends JPanel
 	// All properties for the photo
 	private Properties[] photoProps;
 	private final int NUM_PROPS = 6;
+	// The same as default - just testing it out
 	private final String[] COL_NAMES = { "INDEX", "FILENAME", "FORMAT", "DESCRIPTION",
         						"SIZE", "DATE", "IMAGE", "THUMB" };
+	private final HashMap<String, DataType> COL_TYPES;
+
+    {
+        COL_TYPES = new HashMap<String, DataType>();
+        COL_TYPES.put(COL_NAMES[0], DataType.INT);
+        COL_TYPES.put(COL_NAMES[1], DataType.STRING);
+        COL_TYPES.put(COL_NAMES[2], DataType.STRING);
+        COL_TYPES.put(COL_NAMES[3], DataType.STRING);
+        COL_TYPES.put(COL_NAMES[4], DataType.LONG);
+        COL_TYPES.put(COL_NAMES[5], DataType.DATE);
+        COL_TYPES.put(COL_NAMES[6], DataType.BIN_STREAM);
+        COL_TYPES.put(COL_NAMES[7], DataType.BIN_STREAM);
+    }
 	
 	private final Logger log = Logger.getLogger(PhotoPanel.class.getName());
 	
@@ -91,6 +108,8 @@ public class PhotoPanel extends JPanel
 	{
 		this.db = db;
 		db.setColumnNames(COL_NAMES);
+		db.setColumnTypes(COL_TYPES);
+		db.setUniqueKey(1);													//Let the unique key be the filename
 		connected = false;
 		
 		setBackground(Color.WHITE);
@@ -126,8 +145,8 @@ public class PhotoPanel extends JPanel
 		db.disconnect();
 		connected = false;
 		
-		left.setEnabled(true);
-		right.setEnabled(true);
+		left.setEnabled(false);
+		right.setEnabled(false);
 	}
 	
 	/**
@@ -147,18 +166,27 @@ public class PhotoPanel extends JPanel
 	public void uploadPhotosIntoDB()
 	{
 		if (!connected)
+		{
 			return;
+		}
 		
 		JFileChooser chooser = new JFileChooser();
-		chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+		chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+		chooser.setMultiSelectionEnabled(true);
 		int value = chooser.showDialog(this, "Upload");
 		if (value == JFileChooser.APPROVE_OPTION)
 		{
-			File f = chooser.getSelectedFile();
-			try{ 
-				loadFolder(f.getCanonicalPath()); 
-				log.info(f.getCanonicalPath() + " folder loaded");
-			} catch (IOException e) { e.printStackTrace(); }
+			File[] f = chooser.getSelectedFiles();
+			System.out.println(f[0].isFile() + ", " + f[0].getPath());
+			for (int i = 0; i < f.length; i++)
+			{
+				if (f[i].isFile())
+					loadFile(f[i]);
+				else if (f[i].isDirectory())
+					loadFolder(f[i]);
+				else
+					log.error("What else can this be?!?!");
+			}
 			new Thread(new Runnable() {
 				public void run() 
 				{
@@ -274,7 +302,6 @@ public class PhotoPanel extends JPanel
 				width = w;
 			}
 			g.drawImage(currPhoto, thumbScroll.getWidth() + (w + 10) / 2 - width / 2, (h + 10) / 2 - height / 2, width, height, this);
-			log.info("Image displayed at index " + currIndex);
 		}
 	}
 	
@@ -377,38 +404,47 @@ public class PhotoPanel extends JPanel
 	 * Moved here from PhotoDB, since each PhotoDB client will likely upload
 	 * photos differently.
      * 
-	 * @param folderPath the path to the folder, the photos in which will be uploaded 
+	 * @param folderPath The java.io.File that represents the folder, the photos
+	 * in which will be uploaded 
 	 */
-	private void loadFolder(String folderPath)
+	private void loadFolder(File folder)
 	{
 		// Does NOT load recursively - only files in this folder
-		File[] f = new File(folderPath).listFiles();
+		File[] f = new File(folder.getPath()).listFiles();
 		
 		for (int i = 0; i < f.length; i++)
-        {
 			if (f[i].isFile())
-			{
-                Object[] data = new Object[COL_NAMES.length];
-                
-                // Preparing data
-				String filename = f[i].getName();
-				String format = filename.substring(filename.lastIndexOf(".") + 1, filename.length()).toUpperCase();
-				long size = f[i].length();
-                String description = "[none]";
+                loadFile(f[i]);
 
-                data[0] = i;
-                data[1] = filename;
-                data[2] = format;
-                data[3] = description;
-                data[4] = size;
-                data[5] = new Date(f[i].lastModified());
-                data[6] = f[i];
-                data[7] = f[i];
-				
-				db.insertRow(data);
-			}
-        }
 		log.info("END: FOLDER LOAD");
+	}
+	
+	/**
+	 * Uploads <code>file</code> into the database if it does not exist already
+	 * 
+	 * @param file The java.io.File that represents the file being uploaded
+	 */
+	private void loadFile(File file)
+	{
+		Object[] data = new Object[COL_NAMES.length];
+
+		// Preparing data
+		String filename = file.getName();
+		String format = filename.substring(filename.lastIndexOf(".") + 1, filename.length()).toUpperCase();
+		long size = file.length();
+		String description = "[none]";
+		
+		data[0] = filename.hashCode();
+		data[1] = filename;
+		data[2] = format;
+		data[3] = description;
+		data[4] = size;
+		data[5] = new Date(file.lastModified());
+		data[6] = file;
+		data[7] = file;
+
+		db.insertRow(data);
+		log.info(file.toString() + " loaded");
 	}
 	
 	private class ButtonListener implements ActionListener

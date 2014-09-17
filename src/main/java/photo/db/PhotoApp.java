@@ -38,7 +38,6 @@ public class PhotoApp
 		viewer.setBounds(200, 200, 800, 600);
 		viewer.setBackground(Color.WHITE);
 		viewer.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-	    //w.setResizable(false);
 		viewer.setVisible(true);
 	    
 		viewer.addWindowListener(new WindowCloseListener(db));

@@ -80,7 +80,7 @@ public class PhotoViewer extends JFrame
 		editMenu = new JMenu("Edit");
 		
 		connectItem = new JMenuItem("Connect to DB");						//File menu
-		uploadItem = new JMenuItem("Upload folder...");
+		uploadItem = new JMenuItem("Upload...");
 		disconnectItem = new JMenuItem("Disconnect");
 		exitItem = new JMenuItem("Exit");
 		fileMenu.add(connectItem);
@@ -107,16 +107,20 @@ public class PhotoViewer extends JFrame
 		log.info("Menu initialized");
 	}
 	
-	// Override dispose() so that PhotoPanel can be disposed of also,
-	// mostly to delete the temp files and close the connection
+	/**
+	 * Override dispose() so that PhotoPanel can be disposed of also,
+	 * mostly to delete the temp files and close the connection
+	 */
 	public void dispose()
 	{
 		photoPanel.dispose();												//This must go first
 		super.dispose();
 	}
 	
-	// Gets the inputed settings from the settings dialog and calls PhotoPanel
-	// to update them in PhotoDB
+	/**
+	 * Gets the inputed settings from the settings dialog and calls PhotoPanel
+	 * to update them in PhotoDB
+	 */
 	public void updateSettingsFromDialog()
 	{
 		String host = settingsDialog.getHostname();
