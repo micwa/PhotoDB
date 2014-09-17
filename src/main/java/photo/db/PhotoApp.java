@@ -50,7 +50,7 @@ public class PhotoApp
 		
 		public void windowClosing(WindowEvent e)
 		{
-			db.deleteCachedFiles();
+			db.deletePhotoDirectory();
 		}
 	}
 }

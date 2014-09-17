@@ -193,7 +193,7 @@ public class PhotoPanel extends JPanel
 	public void dispose()
 	{
 		disconnectFromDB();
-		db.deleteCachedFiles();
+		db.deletePhotoDirectory();
 	}
 	
 	/**
