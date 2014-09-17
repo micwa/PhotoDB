@@ -35,8 +35,6 @@ import java.awt.event.ActionListener;
 import javax.swing.JTextField;
 import javax.swing.JPasswordField;
 
-import org.apache.log4j.Logger;
-
 public class SettingsDialog extends JDialog
 {
 	private final JPanel contentPanel = new JPanel();
@@ -49,7 +47,6 @@ public class SettingsDialog extends JDialog
 	
 	private PhotoViewer viewer;
 	private static SettingsDialog self = new SettingsDialog();
-	private static final Logger log = Logger.getLogger(SettingsDialog.class.getName());
 	
 	/**
 	 * Create the dialog.
@@ -203,14 +200,12 @@ public class SettingsDialog extends JDialog
 	{
 		storePrevValues();
 		setVisible(false);
-		log.info("Dialog oked");
 	}
 	
 	public void dialogCancel()												//Closes dialog, does not save changes
 	{
 		revertToPrevValues();
 		setVisible(false);
-		log.info("Dialog canceled");
 	}
 	
 	private void storePrevValues()

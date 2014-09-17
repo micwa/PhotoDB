@@ -24,12 +24,8 @@ import java.awt.event.WindowEvent;
 
 import javax.swing.JFrame;
 
-import org.apache.log4j.Logger;
-
 public class PhotoApp
 {
-	private static final Logger log = Logger.getLogger(PhotoApp.class.getName());
-	
 	public static void main(String[] args)
 	{
 		PhotoDB db = new PhotoDB("localhost:3306");
@@ -55,7 +51,6 @@ public class PhotoApp
 		public void windowClosing(WindowEvent e)
 		{
 			db.deleteCachedFiles();
-			log.info("Window closed");
 		}
 	}
 }
