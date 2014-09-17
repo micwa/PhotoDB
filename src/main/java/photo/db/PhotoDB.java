@@ -41,8 +41,6 @@ import java.util.Properties;
 
 import javax.imageio.ImageIO;
 
-import org.apache.log4j.Logger;
-
 public class PhotoDB
 {
     // Variables required to connect to database
@@ -51,7 +49,7 @@ public class PhotoDB
 	private String dbName;
 	private String tableName;
 	private String user, password;
-	private Connection conn;
+	protected Connection conn;
 
     // Array that stores column order, Hashmap that stores column names & type
     private String[] columnNames;
@@ -60,12 +58,11 @@ public class PhotoDB
     // Retrieved photos & properties
 	private File[] currPhotos;
 	private Properties[] currProps;
-	// Cached photos from getSpecificPhoto()
+	// Cached photos from getSpecificPhoto(), and whether the cache has completed or not
 	private ArrayList<File> cachedPhotos;
+	private HashMap<File, Boolean> cachedDone;
 	// Path where ALL temp/cached photos are stored
 	private String cachePath = "temp835134";
-
-	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
 	
 	// The column of the unique key, to identify each row entry
 	private int uniqueKey;
@@ -133,8 +130,6 @@ public class PhotoDB
 		File tempDir = new File(cachePath);
 		if (!tempDir.exists())
 			tempDir.mkdirs();
-		
-		log.info("PhotoDB constructed");
     }
 
     /**
@@ -155,8 +150,8 @@ public class PhotoDB
 			conn.close();
 
 		cachedPhotos = new ArrayList<File>();
+		cachedDone = new HashMap<File, Boolean>();
 		conn = DriverManager.getConnection(dbURLStart + dbHostname + "/" + dbName, user, password);
-		log.info("Connected to database");
 	}
 	
 	/**
@@ -190,68 +185,88 @@ public class PhotoDB
 	 *		DataType.DATE 		= 		java.sql.Date
 	 *		DataType.TIME 		= 		java.sql.Time
 	 * 		DataType.BIN_STREAM	=		java.io.File
+	 * 
+	 * @return <code>true</code> if <code>data[]</code> is inserted properly, <code>false</code>
+	 * if the unique key value in <code>data[]</code>already exists in the database
+	 * @throws SQLException If there is an error executing the query
 	 */
-	public boolean insertRow(Object[] data)
+	public boolean insertRow(Object[] data) throws SQLException
 	{
 		if (conn == null)
-    		throw new IllegalStateException();
+    		throw new IllegalStateException("Not connected to any database");
 		
 		// Check if the unique key value in <code>data</code> already exists
 		// somewhere in the database
         String check = "SELECT * FROM " + tableName + " WHERE `" + columnNames[uniqueKey] + "`=?";
 		PreparedStatement stmt = null, stmtCheck = null;
 		
-		try {
-			stmtCheck = conn.prepareStatement(check);
-			stmtCheck.setObject(1, data[uniqueKey], columnTypes.get(columnNames[uniqueKey]).getSqlType());
-			ResultSet rs = stmtCheck.executeQuery();
-			
-			// If the ResultSet contains a row, then don't insert anything
-			if (rs.next())
-			{
-				log.info(data[uniqueKey].toString() + " already exists in database");
-				return false;
-			}
-		} catch (SQLException e) { e.printStackTrace(); }
-		
-		// If the unique key value is not in the database, insert it
-		try {
-			String query = "INSERT INTO " + tableName + " VALUES (?";
-	        for (int i = 0; i < columnNames.length - 1; i++)
-	            query += ", ?";
-	        query += ")";
-	        
-            stmt = conn.prepareStatement(query);
+		stmtCheck = conn.prepareStatement(check);
+		stmtCheck.setObject(1, data[uniqueKey], columnTypes.get(columnNames[uniqueKey]).getSqlType());
+		ResultSet rs = stmtCheck.executeQuery();
 
- 			for (int i = 0; i < columnNames.length; i++)
-            {
- 				// i + 1 for arg2, since setX starts at 1 (not 0 like arrays)
-                setPrepStatementParam(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
-            }
-            stmt.execute();
-            
-            log.info("Row loaded");
+		// If the ResultSet contains a row, then don't insert anything
+		if (rs.next())
+			return false;
+		
+		// Now insert the row since checking is done
+		String query = "INSERT INTO " + tableName + " VALUES (?";
+		for (int i = 0; i < columnNames.length - 1; i++)
+			query += ", ?";
+		query += ")";
+
+		stmt = conn.prepareStatement(query);
+
+		for (int i = 0; i < columnNames.length; i++)
+		{
+			// i + 1 for arg2, since setX starts at 1 (not 0 like arrays)
+			setPrepStatementParam(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
 		}
-		catch (SQLException e) {
-			e.printStackTrace();
-	        log.error("ERROR inserting row");
-	        return false;
-	    }
+		stmt.execute();
 
 		return true;
 	}
 	
 	/**
+	 * (The unique key must be properly set in order for this method to work.)
+	 * This method attempts to deletes the row that corresponds to the passed-in
+	 * <code>uniqueKeyValue</code>. Returns true if the row is successfully deleted,
+	 * and false if not.
+	 * 
+	 * @param uniqueKeyValue The value of the unique key that corresponds to the
+	 * row to be deleted
+	 * @return <code>true</code> if the deletion is successful, false if not
+	 * @throws SQLException If there is an error executing the query
+	 */
+	public boolean deleteRow(Object uniqueKeyValue) throws SQLException
+	{
+		if (conn == null)
+			throw new IllegalStateException("Not connected to any database");
+		
+		PreparedStatement stmt = null;
+		String query = "DELETE FROM " + tableName + " WHERE `" + columnNames[uniqueKey]	+ "`=?";
+		
+		// Begin deletion
+		stmt = conn.prepareStatement(query);
+		stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
+		int result = stmt.executeUpdate();
+
+		if (result == 1)													//Since only attempt to delete one row
+			return true;
+		else
+			return false;
+	}
+
+	/**
 	 * Retrieves photos from database and writes them to the temp directory
 	 * in the order that they were inserted into the database.
 	 * This method retrieves and stores the photo properties as well.
 	 * 
-	 * @throws SQLException If there is an error executing a query
+	 * @throws SQLException If there is an error executing the query
 	 */
 	public void retrievePhotos() throws SQLException
 	{
 		if (conn == null)
-    		throw new IllegalStateException();
+    		throw new IllegalStateException("Not connected to any database");
 				
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName;
@@ -289,12 +304,12 @@ public class PhotoDB
 	/**
 	 * Basically retrievePhotos(), except it skips writing the images to disk
 	 * 
-	 * @throws SQLException If there is an error executing a query
+	 * @throws SQLException If there is an error executing the query
 	 */
 	public void retrievePhotoPropertiesOnly() throws SQLException
 	{
 		if (conn == null)
-    		throw new IllegalStateException();
+    		throw new IllegalStateException("Not connected to any database");
 				
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName;
@@ -329,7 +344,7 @@ public class PhotoDB
 	 * Can only be called if retrievePhotos() has been called >=1 time
 	 * 
 	 * @return Image[] array, which contains photos that have been previously
-	 * written to disk, or null if an IOException is thrown
+	 * written to disk, or null if the retrieve photos can not be read (error)
 	 */
 	public Image[] getRetrievedPhotos()
 	{
@@ -377,21 +392,22 @@ public class PhotoDB
 	 * can be viewed before the stream writer finishes writing.
 	 *
 	 * Notes on the caching: this method will first determine if retrievePhotos() has been
-	 * called. If it has, it will use those cached photos and not do anything. If not,
-	 * it will determine whether that photo has already been cached during this connection,
-	 * and use that cache if it has. Otherwise, it will attempt to write the file
+	 * called. If it has, it will use those cached photos and not cache anything. If not,
+	 * it will determine whether the requested photo has already been cached during this connection,
+	 * and use that cache if it has. Otherwise, it will attempt to cache the file
 	 * to disk. (If a file with the same name already exists in the temp directory, it
 	 * will return an Image object of that file.)
 	 * 
 	 * @param uniqueKeyValue The value of the unique key for the photo that is
 	 * intended to be retrieved.
 	 * @return An <code>Image</code> that corresponds to the uniqueKeyValue, or null
-	 * if either an SQLException or IOException is thrown
+	 * if either the database query fails to execute or the binary stream can not be
+	 * converted into an image
 	 */
 	public Image getSpecificPhoto(Object uniqueKeyValue)
 	{
 		if (conn == null)
-    		throw new IllegalStateException();
+    		throw new IllegalStateException("Not connected to any database");
 				
 		Image image = null;
 		PreparedStatement stmt = null;
@@ -412,23 +428,15 @@ public class PhotoDB
 	    	// -- Note: For this to work, the filename for the temp file should be
 	    	//		the same as in getPrepStatementParam()
 	    	if (currPhotos != null && currPhotos.length > 0)
-	    	{
 	    		for (int i = 0; i < currPhotos.length; i++)
-	    		{
 	    			if (file.equals(currPhotos[i]))
-	    			{
-	    				log.info(file.toString() + " taken from currPhotos cache");
 	    				return ImageIO.read(file);
-	    			}
-	    		}
-	    	}
 	    	
-	    	// Now check if the file had been cached by THIS method and not retrievePhotos()
-	    	if (cachedPhotos.contains(file))
-	    	{
-	    		log.info(file.toString() + " taken from cachedPhotos cache");
+	    	// Now check if the file had been cached by THIS method and the thread writing
+	    	// it is no longer alive
+	    	if (cachedPhotos.contains(file) && cachedDone.get(file))
 				return ImageIO.read(file);
-	    	}
+	    	
 	    	// If file's not in either of those arrays, then attempt to cache it
 	    	else
 	    	{
@@ -449,17 +457,16 @@ public class PhotoDB
 	    		// If the file already exists, the thread will terminate immediately
 	    		Thread t = new Thread(new StreamWriter(rs.getBinaryStream(index), file));
 	    		t.start();
+	    		cachedDone.put(file, false);
 	    		
 	    		// Read the image
 	    		in = rs.getBinaryStream(index);
 	    		image = ImageIO.read(in);
 	    		
 	    		cachedPhotos.add(file);										//Add if already existed or not
-	    		log.info(file.toString() + " added to cachedPhotos");
 	    	}
 		} catch (Exception e ) {
 			e.printStackTrace();
-			log.error("ERROR retrieving photo with unique key value: " + uniqueKeyValue.toString());
 			return null;
 		}
 		return image;
@@ -473,13 +480,13 @@ public class PhotoDB
 	 * Use this in conjunction with getSpecificPhoto() and retrievePhotoPropertiesOnly(),
 	 * or use retrievePhotos() by itself.
 	 * 
-	 * @return The array of thumbnail images in the database, or null if
-	 * either PhotoDB is not connected to any database or an exception is thrown.
+	 * @return The array of thumbnail images in the database, or null if the database
+	 * query fails to execute
 	 */
 	public Image[] getPhotoThumbnails()
 	{
 		if (conn == null)
-    		throw new IllegalStateException();
+    		throw new IllegalStateException("Not connected to any database");
 				
 		ArrayList<Image> thumbs = new ArrayList<Image>();
 		PreparedStatement stmt = null;
@@ -529,7 +536,6 @@ public class PhotoDB
 			for (int i = 0; i < files.length; i++)
 				files[i].delete();
 			tempDir.delete();
-			log.info("Deleted temp files");
 		}
 	}
 	
@@ -539,7 +545,7 @@ public class PhotoDB
 	}
 	
 	/**
-	 * This method sets the directory which PhotoDB uses for caching purposes,
+	 * Sets the directory which PhotoDB uses for caching purposes,
 	 * specifically retrievePhotos() and getSpecificPhoto().
 	 * 
 	 * @param filepath The filepath to the directory to store cached photos in
@@ -615,13 +621,13 @@ public class PhotoDB
      * will have to be called again.
      * 
      * @return An <code>Object</code> array of all the unique keys stored in the
-     * database, or null if an SQLException is thrown.
+     * database, or null if the database query fails to execute
      */
     public Object[] getAllUniqueKeys()
     {
     	// If there's no connection, return immediately
     	if (conn == null)
-    		throw new IllegalStateException();
+    		throw new IllegalStateException("Not connected to any database");
     	
     	ArrayList<Object> objs = new ArrayList<Object>();
     	PreparedStatement stmt = null;
@@ -720,8 +726,7 @@ public class PhotoDB
 			} catch (IOException e) { e.printStackTrace(); }
     		break;
     	default:
-    		log.error("Data type not supported");
-    		break;
+    		throw new IllegalArgumentException("Data type not supported");
     	}
     }
     
@@ -772,8 +777,7 @@ public class PhotoDB
             	
 	        	return file;
             default:
-                log.error("Data type not supported");
-                return null;
+            	throw new IllegalArgumentException("Data type not supported");
         }
     }
 
@@ -812,8 +816,8 @@ public class PhotoDB
 	    			int c = 0;
 	    			while ((c = in.read()) != -1)
 	    				os.write(c);
-
-	    			log.info(file.getCanonicalFile() + " written to disk");
+	    			cachedDone.put(file, true);
+	    			System.out.println("FINISHED");
 	    		} catch (IOException e) { e.printStackTrace(); }
 	    	}
 		}

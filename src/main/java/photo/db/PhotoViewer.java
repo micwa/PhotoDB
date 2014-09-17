@@ -18,6 +18,7 @@
  */
 package photo.db;
 
+import java.awt.KeyboardFocusManager;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
@@ -30,19 +31,15 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.UIManager;
 
-import org.apache.log4j.Logger;
-
 public class PhotoViewer extends JFrame
 {
 	private PhotoPanel photoPanel;
 	private JMenuBar menuBar;
 	private JMenu fileMenu, editMenu;
-	private JMenuItem connectItem, uploadItem, settItem, disconnectItem, exitItem;
+	private JMenuItem connectItem, uploadItem, settItem, disconnectItem, deleteItem, exitItem;
 	
 	// The dialog to change settings
 	private SettingsDialog settingsDialog;
-	
-	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
 	
 	public PhotoViewer(PhotoDB db)
 	{
@@ -64,14 +61,11 @@ public class PhotoViewer extends JFrame
 			{
 				settingsDialog.dialogCancel();								//Don't save changes if closed using "x"
 				updateSettingsFromDialog();
-				log.info("Dialog closed");
 			}
 		});
 		settingsDialog.setVisible(false);
 		
 		updateSettingsFromDialog();
-		
-		log.info("PhotoViewer constructed");
 	}
 	
 	private void initMenu()
@@ -83,15 +77,18 @@ public class PhotoViewer extends JFrame
 		connectItem = new JMenuItem("Connect to DB");						//File menu
 		uploadItem = new JMenuItem("Upload...");
 		uploadItem.setEnabled(false);										//Disable menu items that first require a connection
+		deleteItem = new JMenuItem("Delete file");
+		deleteItem.setEnabled(false);
 		disconnectItem = new JMenuItem("Disconnect");
 		disconnectItem.setEnabled(false);
 		exitItem = new JMenuItem("Exit");
 		fileMenu.add(connectItem);
 		fileMenu.add(uploadItem);
+		fileMenu.add(deleteItem);
 		fileMenu.add(disconnectItem);
 		fileMenu.add(exitItem);
 		fileMenu.insertSeparator(1);
-		fileMenu.insertSeparator(4);
+		fileMenu.insertSeparator(5);
 		
 		settItem = new JMenuItem("Settings");								//Edit menu
 		editMenu.add(settItem);
@@ -99,6 +96,7 @@ public class PhotoViewer extends JFrame
 		ActionListener al = new ButtonListener();
 		connectItem.addActionListener(al);
 		uploadItem.addActionListener(al);
+		deleteItem.addActionListener(al);
 		disconnectItem.addActionListener(al);
 		exitItem.addActionListener(al);
 		settItem.addActionListener(al);
@@ -107,8 +105,6 @@ public class PhotoViewer extends JFrame
 		menuBar.add(editMenu);
 		
 		setJMenuBar(menuBar);
-		
-		log.info("Menu initialized");
 	}
 	
 	/**
@@ -147,6 +143,7 @@ public class PhotoViewer extends JFrame
 				{
 					uploadItem.setEnabled(true);
 					disconnectItem.setEnabled(true);
+					deleteItem.setEnabled(true);
 				}
 			}
 			else if (e.getSource() == disconnectItem)
@@ -156,11 +153,13 @@ public class PhotoViewer extends JFrame
 				{
 					uploadItem.setEnabled(false);	
 					disconnectItem.setEnabled(false);
+					deleteItem.setEnabled(false);
 				}
 			}
 			else if (e.getSource() == uploadItem)
 				photoPanel.uploadPhotosIntoDB();
-			
+			else if (e.getSource() == deleteItem)
+				photoPanel.deletePhotosFromDB();
 			else if (e.getSource() == settItem)
 			{
 				settingsDialog.setLocationRelativeTo(PhotoViewer.this);		//Doesn't work if put in constructor

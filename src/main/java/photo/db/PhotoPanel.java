@@ -24,16 +24,20 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Image;
+import java.awt.KeyboardFocusManager;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.io.File;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Date;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Properties;
 
@@ -49,8 +53,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.border.Border;
 import javax.swing.border.LineBorder;
-
-import org.apache.log4j.Logger;
 
 public class PhotoPanel extends JPanel
 {
@@ -70,9 +72,12 @@ public class PhotoPanel extends JPanel
 	
 	// Stores all unique keys for the photos
 	private Object[] photoKeys;
-	// The current photo, and the current index for the thumbnail array
+	// The current photo, the current index for the thumbnail array, and
+	// multiple selected indices (if there is any) & state
 	private Image currPhoto;
 	private int currIndex = -1;
+	private ArrayList<Integer> multipleIndices;
+	private boolean multipleSelected;
 	
 	// Whether PhotoPanel is connected to a database
 	private boolean connected;
@@ -97,8 +102,6 @@ public class PhotoPanel extends JPanel
         COL_TYPES.put(COL_NAMES[7], DataType.BIN_STREAM);
     }
 	
-	private final Logger log = Logger.getLogger(PhotoPanel.class.getName());
-	
 	/**
 	 * Initializes a new instance of <code>PhotoPanel</code> and sets the
 	 * column names and types for PhotoDB. The layout is set to BorderLayout
@@ -108,18 +111,28 @@ public class PhotoPanel extends JPanel
 	 */
 	public PhotoPanel(PhotoDB db)
 	{
+		super();
+		
 		this.db = db;
 		db.setColumnNames(COL_NAMES);
 		db.setColumnTypes(COL_TYPES);
 		db.setUniqueKey(1);													//Let the unique key be the filename
 		connected = false;
+		multipleIndices = new ArrayList<Integer>();
+		multipleSelected = false;
 		
 		setBackground(Color.WHITE);
 		setLayout(new BorderLayout());
+		setFocusable(true);
+		addComponentListener(new ComponentAdapter() {						//To get focus when component is shown
+			public void componentShown(ComponentEvent cEvt) {
+				Component src = (Component) cEvt.getSource();
+				src.requestFocusInWindow();
+			}
+		});
+		addKeyListener(new SelectListener());
 		
 		initSouthPanel();
-
-		log.info("PhotoPanel constructed");
 	}
 	
 	/**
@@ -137,12 +150,10 @@ public class PhotoPanel extends JPanel
 		} catch (SQLException e) {
 			JOptionPane.showMessageDialog(this, "Error connecting to database. Check your settings.",
 											"Error", JOptionPane.ERROR_MESSAGE);
-			log.error("Error connecting to database");
 			return false;
 		}
-		retrievePropsFromDB();
-		initThumbPane();
 		connected = true;
+		updatePhotoDisplay();
 		
 		left.setEnabled(true);												//Show image view and view the first photo
 		right.setEnabled(true);
@@ -164,7 +175,6 @@ public class PhotoPanel extends JPanel
 		} catch (SQLException e) {
 			JOptionPane.showMessageDialog(this, "Error disconnecting from database.",
 											"Error", JOptionPane.ERROR_MESSAGE);
-			log.error("Error connecting to database");
 			return false;
 		}
 		
@@ -187,7 +197,29 @@ public class PhotoPanel extends JPanel
 	}
 	
 	/**
-	 * Upload photos from a specific folder (selected from the dialog) into the database. 
+	 * Updates the thumbnail pane with the latest thumbnails from the database
+	 * and retrieves the correct properties from PhotoDB.
+	 * 
+	 * Whenever the database is updated, call this method to refresh the UI.
+	 * If for some reason there is an SQLException retrieving the properties, an error
+	 * dialog pops displaying the error.
+	 */
+	public void updatePhotoDisplay()
+	{	
+		try {
+			retrievePropsFromDB();
+		} catch (SQLException e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, "Error retrieving properties from database",
+											"Error", JOptionPane.ERROR_MESSAGE);
+		}
+		initThumbPane();													//Thumbpane after, since it also calls showPhoto()
+	}
+	
+	/**
+	 * Upload photos from a specific folder (selected from the dialog) into the database.
+	 * When the upload finishes, properties are updated and the thumbnail pane is
+	 * refreshed automatically. 
 	 */
 	public void uploadPhotosIntoDB()
 	{
@@ -203,22 +235,48 @@ public class PhotoPanel extends JPanel
 			{
 				if (f[i].isFile())
 					loadFile(f[i]);
-				else if (f[i].isDirectory())
-					loadFolder(f[i]);
 				else
-					log.error("What else can this be?!?!");
+					loadFolder(f[i]);
 			}
-			new Thread(new Runnable() {
-				public void run() 
-				{
-					initThumbPane();										//Update list of photos asynchronously
-				}
-			}).start();
+			updatePhotoDisplay();
 		}
-		else if (value == JFileChooser.CANCEL_OPTION)
-			log.info("Upload canceled");
+		// Do nothing if the dialog is canceled
 	}
 	
+	/**
+	 * Deletes the currently selected photo(s) from the database if the confirm
+	 * dialog is confirmed. When the selected photos have been deleted, the
+	 * thumbnail pane and the properties are updated.
+	 */
+	public void deletePhotosFromDB()
+	{
+		try {
+			if (currIndex == -1)
+				return;
+			
+			// Confirm dialog
+			int numFiles = Math.max(multipleIndices.size(), 1);
+			int result = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete " + numFiles + " file"
+					+ (numFiles == 1 ? "" : "s") + "?", "File Deletion", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+			if (result != 0)
+				return;
+			
+			// If otherIndices is not empty, delete from there; else, delete currently selected photo
+			if (multipleIndices.size() > 0)
+			{
+				for (int i = 0; i < multipleIndices.size(); i++)
+					db.deleteRow(photoKeys[multipleIndices.get(i)]); 			//Delete all photos selected
+			}
+			else
+				db.deleteRow(photoKeys[currIndex]);
+			updatePhotoDisplay();
+		} catch (SQLException e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, "Error deleting file(s) from database",
+					"Error", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
 	/**
 	 * Sets the current photo to the (index+1)th photo in the database;
 	 * draws a border around that photo's thumbnail; and calls repaint().
@@ -238,18 +296,25 @@ public class PhotoPanel extends JPanel
 		int prevIndex = currIndex;
 		currIndex = index;
 		
-		// Wrap around if past the end/start
-		if (currIndex >= thumbButtons.length)	
+		if (currIndex >= thumbButtons.length)								//Wrap around if past the end/start
 			currIndex = 0;
 		if (currIndex < 0)
 			currIndex = thumbButtons.length - 1;
 		
-		// Remove last border if prevIndex is valid
-		if (prevIndex != -1)
-			thumbButtons[prevIndex].setBorder(BorderFactory.createEmptyBorder());
-		// Add new border
-		Border border = new LineBorder(Color.BLUE, 3);
-		thumbButtons[currIndex].setBorder(border);
+		// Remove last border(s) if multipleSelected is false
+		if (prevIndex != -1 && !multipleSelected)
+		{
+			setThumbnailBorder(prevIndex, BorderFactory.createEmptyBorder());
+			if (multipleIndices.size() > 0)									//Clear all borders
+			{
+				for (int i = 0; i < multipleIndices.size(); i++)
+					setThumbnailBorder(multipleIndices.get(i), BorderFactory.createEmptyBorder());
+				multipleIndices.clear();
+			}
+		}
+		
+		// Always add a new border
+		setThumbnailBorder(currIndex, new LineBorder(Color.BLUE, 3));
 		
 		// Since the photo in the thumbnail array corresponds to the unique
 		// key in the primary keys array, call getSpecificPhoto with that key
@@ -267,29 +332,8 @@ public class PhotoPanel extends JPanel
 		db.setTableName(tableName);
 		db.setUser(user);
 		db.setPassword(password);
-		
-		log.info("DB settings updated");
 	}
 
-	/**
-	 * Whenever the database is updated (or if properties have not yet been
-	 * retrieved), call this method to update the properties label. If for some
-	 * reason there is an SQLException retrieving the properties, an error
-	 * dialog pops up.
-	 */
-	public void retrievePropsFromDB()
-	{
-		try {
-			db.retrievePhotoPropertiesOnly();
-		} catch (SQLException e) {
-			e.printStackTrace();
-			JOptionPane.showMessageDialog(this, "Error retrieving properties from database",
-											"Error", JOptionPane.ERROR_MESSAGE);
-			return;
-		}
-		photoProps = db.getRetrievedPhotoProperties();
-	}
-	
 	/**
 	 * This method updates the properties panel (south) to display the
 	 * properties of the currently displayed image. All properties are displayed
@@ -308,7 +352,7 @@ public class PhotoPanel extends JPanel
 		// Also disallow viewing properties if disconnected (despite being cached)
 		if (photoProps == null || !connected)
 			return;
-		
+
 		Properties currProp = photoProps[currIndex];
 		String[] values = new String[NUM_PROPS];
 		
@@ -419,8 +463,9 @@ public class PhotoPanel extends JPanel
 			thumbButtons[i] = new JButton(new ImageIcon(thumbs[i]));
 			thumbButtons[i].setPreferredSize(new Dimension(100, 64));
 			thumbButtons[i].setBorder(BorderFactory.createEmptyBorder());
-			thumbButtons[i].setContentAreaFilled(false);					//Make the icon the only button
+			thumbButtons[i].setContentAreaFilled(false);						//Make the icon the only button
 			thumbButtons[i].setAlignmentX(Component.CENTER_ALIGNMENT);
+			thumbButtons[i].setFocusable(false);							//So that multiple selection works
 			thumbButtons[i].addActionListener(al);
 
 			thumbPanel.add(thumbButtons[i]);
@@ -435,10 +480,32 @@ public class PhotoPanel extends JPanel
 		thumbPanel.repaint();
 		revalidate();
 		repaint();
-
-		log.info("Loaded thumbnail pane");
 	}
 	
+	/**
+	 * Retrieves a new array of photo properties from the database.
+	 * 
+	 * @throws SQLException If there is an error retrieving properties from
+	 * the database
+	 */
+	private void retrievePropsFromDB() throws SQLException
+	{
+		try {
+			db.retrievePhotoPropertiesOnly();
+		} catch (SQLException e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, "Error retrieving properties from database",
+											"Error", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		photoProps = db.getRetrievedPhotoProperties();
+	}
+	
+	private void setThumbnailBorder(int index, Border border)
+	{
+		thumbButtons[index].setBorder(border);
+	}
+
 	/**
 	 * Moved here from PhotoDB, since each PhotoDB client will likely upload
 	 * photos differently.
@@ -454,8 +521,6 @@ public class PhotoPanel extends JPanel
 		for (int i = 0; i < f.length; i++)
 			if (f[i].isFile())
                 loadFile(f[i]);
-
-		log.info("END: FOLDER LOAD");
 	}
 	
 	/**
@@ -481,16 +546,43 @@ public class PhotoPanel extends JPanel
 		data[5] = new Date(file.lastModified());
 		data[6] = file;
 		data[7] = file;
+		
+		try {
+			db.insertRow(data);
+		} catch (SQLException e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, "Error uploading file: " + file.toString(),
+							"Upload error", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+	
+	/**
+	 * To help with selecting multiple photos.
+	 */
+	private class SelectListener implements KeyListener
+	{
+		public void keyPressed(KeyEvent arg0)
+		{
+			int key = arg0.getKeyCode();
+			if (key == KeyEvent.VK_CONTROL)									//Set multiple selection to true on <Control> press
+				multipleSelected = true;
+		}
 
-		db.insertRow(data);
+		public void keyReleased(KeyEvent arg0)
+		{
+			int key = arg0.getKeyCode();
+			if (key == KeyEvent.VK_CONTROL)
+				multipleSelected = false;
+		}
+
+		public void keyTyped(KeyEvent arg0) {}
 	}
 	
 	private class ButtonListener implements ActionListener
 	{
 		public void actionPerformed(ActionEvent e)
 		{
-			// "Decrement" currIndex - the real assignment happens in showPhoto() itself
-			if (e.getSource() == left)
+			if (e.getSource() == left)										//"Decrement" currIndex - the real assignment happens in showPhoto() itself
 				showPhoto(currIndex - 1);
 			else if (e.getSource() == right)
 				showPhoto(currIndex + 1);
@@ -500,7 +592,16 @@ public class PhotoPanel extends JPanel
 				{
 					if (e.getSource() == thumbButtons[i])
 					{
+						if (multipleSelected)								//Add to tracked indices if multiple selection if on
+						{
+							if (currIndex != -1)
+								multipleIndices.add(currIndex);				//Add current index as well
+							multipleIndices.add(i);
+						}
+						//else												//Don't clear here - showPhoto() will clear automatically
+							//multipleIndices.clear();
 						showPhoto(i);
+						
 						return;
 					}
 				}
