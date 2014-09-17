@@ -403,8 +403,7 @@ public class PhotoDB
 	 * @param uniqueKeyValue The value of the unique key for the photo that is
 	 * intended to be retrieved.
 	 * @return An <code>Image</code> that corresponds to the uniqueKeyValue, or null
-	 * if either the database query fails to execute or the binary stream can not be
-	 * converted into an image
+	 * if there is no such image or an exception is thrown
 	 */
 	public Image getSpecificPhoto(Object uniqueKeyValue)
 	{
@@ -420,7 +419,9 @@ public class PhotoDB
 			stmt = conn.prepareStatement(query);
 			stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
 			ResultSet rs = stmt.executeQuery();
-			rs.next();
+			
+			if (!rs.next())
+				return null;
 			
 			// Get the filename first
 	    	String filename = rs.getObject(uniqueKey + 1).toString();
@@ -554,7 +555,7 @@ public class PhotoDB
 		{
 			if (streamWriters != null)
 				for (StreamWriter sw : streamWriters)
-					sw.stop();												//Works because it's in a different thread :)
+					sw.kill();												//Works because it's in a different thread :)
 			if (currPhotos != null)
 				for (File f : currPhotos)
 					f.delete();	
@@ -823,22 +824,28 @@ public class PhotoDB
 		return buff;
 	}
 	
+	/**
+	 * A minimalist file-writer implementing <code>Runnable</code> to be used
+	 * for asynchronous and/or synchronized file writes. This class provides the
+	 * ability to start, stop and resume, and completely, kill file-writes.
+	 */
 	protected class StreamWriter implements Runnable
 	{
 		private InputStream in;
 		private File file;
-		private boolean doRun;
+		private boolean doRun, isAlive;
 		
 		public StreamWriter(InputStream in, File file)
 		{
 			this.in = in;
 			this.file = file;
 			doRun = true;
+			isAlive = true;
 		}
 		
 		/**
-		 * If the file does not exist, writes the file to disk; otherwise, this
-		 * method does nothing
+		 * If the file does not exist, writes the file to disk and calls <code>kill()</code>
+		 * on itself after completion. Otherwise, this method does nothing
 		 */
 		public void run()
 		{
@@ -848,10 +855,23 @@ public class PhotoDB
 	    		try {
 	    			os = new FileOutputStream(file);				//Writing the stream to disk
 	    			int c = 0;
-	    			while (doRun && (c = in.read()) != -1)
-	    				os.write(c);
-	    			cachedDone.put(file, true);
-	    		} catch (IOException e) { e.printStackTrace(); }
+	    			
+	    			// While this StreamWriter is still "alive", write if this hasn't
+	    			// been stopped, and if it has, Thread.sleep to see if it's woken up
+	    			while (isAlive)
+	    			{
+		    			while (isAlive && doRun && (c = in.read()) != -1)	//Constantly check for kill() signal
+		    				os.write(c);
+		    			
+		    			if (!doRun)
+		    				Thread.sleep(100);
+		    			else										//Entering here means the StreamWriter is alive, AND
+		    			{											//the file has finished writing, so kill itself
+		    				this.kill();
+		    				cachedDone.put(file, true);	
+		    			}
+	    			}
+	    		} catch (Exception e) { e.printStackTrace(); }
 	    		finally {
 	    			try {
 						in.close();
@@ -862,16 +882,36 @@ public class PhotoDB
 		}
 		
 		/**
-		 * Tells this <code>StreamWriter</code> to stop writing to the file
-		 * (and thus release all resources). Does nothing if the file has already
-		 * been written.
+		 * If this <code>StreamWriter</code> has been stopped, resume writing
+		 * the file if it has not yet been written. Otherwise, this method
+		 * does nothing.
+		 */
+		public void resume()
+		{
+			doRun = true;
+		}
+		
+		/**
+		 * Tells this <code>StreamWriter</code> to stop writing to the file.
+		 * File-writing can be resumed with a call to <code>resume()</code>.
 		 * 
-		 * This has to be called from a different thread than the one run() is
+		 * Hint: This has to be called from a different thread than the one run() is
 		 * running on.
 		 */
 		public void stop()
 		{
 			doRun = false;
+		}		
+		
+		/**
+		 * This method prevents the <code>StreamWriter</code> from writing any
+		 * further and causes it to release all resources it is using. Note that run() calls
+		 * this method after it finishes writing the file, so the client does not
+		 * need to do so in normal circumstances.
+		 */
+		public void kill()
+		{
+			isAlive = false;
 		}
 	}
 }

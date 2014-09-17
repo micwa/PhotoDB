@@ -21,7 +21,7 @@ available for uploading and deleting photos in the database.
 Access-wise, PhotoDB has the ability to:
 
 * Establish a connection to a MySQL database (note that
-this depends on the [MySQL Connector J] (http://dev.mysql.com/downloads/connector/j/))
+this depends on [MySQL Connector J] (http://dev.mysql.com/downloads/connector/j/))
 * Download all photos from the database and store them in a local directory
 * Retrieve photos one at a time for viewing, and cache them locally for when
 they are viewed again
@@ -32,11 +32,11 @@ they are viewed again
 PhotoDB is also customizable. Clients and subclasses can:
 
 * Specify a custom table schema, and not use `PhotoDB`'s defaults
-* Set the unique key (column), the value of which will identify the photo in
-the table being accessed
-* Use the inner `StreamWriter` class to write files asynchronously and stop
-them at will
-* Modify `DataType` to allow `PhotoDB` to work with more data types
+* Set the unique key (column), the value of which is used to identify the photo
+in the table being accessed
+* Use the inner `StreamWriter` class to write files asynchronously and start/stop
+writing them at will
+* Modify and use `DataType` to allow `PhotoDB` to work with more data types
 * Currently supported (SQL) data types are: `INTEGER`, `BOOLEAN`, `DOUBLE`,
 `BIGINT`, `VARCHAR`, `DATE`, `TIME`, and `BLOB` (which is assumed to be a Java
 binary stream)
