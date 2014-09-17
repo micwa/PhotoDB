@@ -54,7 +54,7 @@ public class PhotoApp
 		
 		public void windowClosing(WindowEvent e)
 		{
-			db.deleteTempFiles();
+			db.deleteCachedFiles();
 			log.info("Window closed");
 		}
 	}

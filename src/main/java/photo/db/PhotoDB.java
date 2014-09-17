@@ -62,8 +62,8 @@ public class PhotoDB
 	private Properties[] currProps;
 	// Cached photos from getSpecificPhoto()
 	private ArrayList<File> cachedPhotos;
-	// Path where ALL temp photos are stored
-	private static final String TEMP_PATH = "temp135134";
+	// Path where ALL temp/cached photos are stored
+	private String cachePath = "temp835134";
 
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
 	
@@ -130,7 +130,7 @@ public class PhotoDB
         conn = null;
         
         // If the temp directory does not exist, create it
-		File tempDir = new File(TEMP_PATH);
+		File tempDir = new File(cachePath);
 		if (!tempDir.exists())
 			tempDir.mkdirs();
 		
@@ -140,12 +140,14 @@ public class PhotoDB
     /**
      * Connect to the database with its current settings; if PhotoDB is
      * connected to a database, that connection will be terminated. All methods
-     * that access the database (loadFolder, insertRow, retrieve*, get*Photo*,
-     * getAllUniqueKeys()) will NOT work if this method is not called first.
+     * that access the database (insertRow(), retrieve*(), getSpecPhoto(), getPhotoThumbs(),
+     * getAllUniqueKeys()) will throw IllegalStateExceptions if this method is not called first.
      *
      * The photo cache for getSpecificPhoto() is also reset per connection
      * (although if deleteTempFiles() is not called, those temp files will
      * remain and be available for use by getSpecificPhoto()).
+     * 
+     * @throws SQLException If there is an error connecting to the database
      */
 	public void connect() throws SQLException
 	{
@@ -160,6 +162,8 @@ public class PhotoDB
 	/**
 	 *  Manually disconnect from database and sets the current connection
 	 *  to null.
+	 *  
+	 *  @throws SQLException If there is an error disconnecting from the database
 	 */
 	public void disconnect() throws SQLException
 	{
@@ -170,7 +174,8 @@ public class PhotoDB
 	
 	/**
 	 * Inserts a row containing <code>data[]</code> into the database as long
-	 * as the row's unique key does not already exist in the database.
+	 * as the row's unique key does not already exist in the database. Returns
+	 * true if the insertion was successful, and false if not.
 	 * 
 	 * @param data The array of data to be inserted.
 	 * The index of each object in data[] should correspond to the column in columnNames
@@ -186,11 +191,10 @@ public class PhotoDB
 	 *		DataType.TIME 		= 		java.sql.Time
 	 * 		DataType.BIN_STREAM	=		java.io.File
 	 */
-	public void insertRow(Object[] data)
+	public boolean insertRow(Object[] data)
 	{
-		// If there's no connection, return immediately
 		if (conn == null)
-			return;
+    		throw new IllegalStateException();
 		
 		// Check if the unique key value in <code>data</code> already exists
 		// somewhere in the database
@@ -206,7 +210,7 @@ public class PhotoDB
 			if (rs.next())
 			{
 				log.info(data[uniqueKey].toString() + " already exists in database");
-				return;
+				return false;
 			}
 		} catch (SQLException e) { e.printStackTrace(); }
 		
@@ -231,52 +235,51 @@ public class PhotoDB
 		catch (SQLException e) {
 			e.printStackTrace();
 	        log.error("ERROR inserting row");
+	        return false;
 	    }
+
+		return true;
 	}
 	
 	/**
 	 * Retrieves photos from database and writes them to the temp directory
 	 * in the order that they were inserted into the database.
 	 * This method retrieves and stores the photo properties as well.
+	 * 
+	 * @throws SQLException If there is an error executing a query
 	 */
-	public void retrievePhotos()
+	public void retrievePhotos() throws SQLException
 	{
-		// If there's no connection, return immediately
 		if (conn == null)
-			return;
+    		throw new IllegalStateException();
 				
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName;
 		ArrayList<File> paths = new ArrayList<File>();
 		ArrayList<Properties> props = new ArrayList<Properties>();
 		
-		try {
-			stmt = conn.prepareStatement(query);
-	        ResultSet rs = stmt.executeQuery();						//Getting rows from table
-	        
-	        while (rs.next())
-	        {
-	        	Properties tempProp = new Properties();
-	        	
-	        	for (int i = 0; i < columnNames.length; i++)
-	        	{
-	        		Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
-	        		
-	        		// If it's the image, add path and skip setting properties
-	        		if (obj instanceof File)
-	        		{
-	        			paths.add((File) obj);										//Add even if file exists already
-	        			continue;
-	        		}
-	        		if (obj != null)
-	        			tempProp.setProperty(columnNames[i], obj.toString());
-	        	}
-        		props.add(tempProp);
-	        }
-	    } catch (SQLException e ) {
-	    	e.printStackTrace();
-	        log.error("ERROR retrieving photos");
-	    }
+		stmt = conn.prepareStatement(query);
+		ResultSet rs = stmt.executeQuery();						//Getting rows from table
+
+		while (rs.next())
+		{
+			Properties tempProp = new Properties();
+
+			for (int i = 0; i < columnNames.length; i++)
+			{
+				Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
+
+				// If it's the image, add path and skip setting properties
+				if (obj instanceof File)
+				{
+					paths.add((File) obj);										//Add even if file exists already
+					continue;
+				}
+				if (obj != null)
+					tempProp.setProperty(columnNames[i], obj.toString());
+			}
+			props.add(tempProp);
+		}
 		
 		// Store photo file paths - return Image[] in getRetrievedPhotos()
 		currPhotos = paths.toArray(new File[paths.size()]);
@@ -285,50 +288,48 @@ public class PhotoDB
 	
 	/**
 	 * Basically retrievePhotos(), except it skips writing the images to disk
+	 * 
+	 * @throws SQLException If there is an error executing a query
 	 */
-	public void retrievePhotoPropertiesOnly()
+	public void retrievePhotoPropertiesOnly() throws SQLException
 	{
-		// If there's no connection, return immediately
 		if (conn == null)
-			return;
+    		throw new IllegalStateException();
 				
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName;
 		ArrayList<Properties> props = new ArrayList<Properties>();
 		
-		try {
-			stmt = conn.prepareStatement(query);
-	        ResultSet rs = stmt.executeQuery();						//Getting rows from table
-	        
-	        while (rs.next()) 
-	        {
-	        	Properties tempProp = new Properties();
-	        	
-	        	for (int i = 0; i < columnNames.length; i++)
-	        	{
-	        		DataType type = columnTypes.get(columnNames[i]);
-	        		
-	        		//Skip BIN_STREAMs since they aren't properties
-	        		if (type == DataType.BIN_STREAM)
-	        			continue;
-	        		
-	        		Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
-	        		if (obj != null)
-	        			tempProp.setProperty(columnNames[i], obj.toString());
-	        	}
-        		props.add(tempProp);
-	        }
-	    } catch (SQLException e ) {
-	    	e.printStackTrace();
-	        log.error("ERROR retrieving photo properties");
-	    }
+		stmt = conn.prepareStatement(query);
+		ResultSet rs = stmt.executeQuery();						//Getting rows from table
+
+		while (rs.next()) 
+		{
+			Properties tempProp = new Properties();
+
+			for (int i = 0; i < columnNames.length; i++)
+			{
+				DataType type = columnTypes.get(columnNames[i]);
+
+				//Skip BIN_STREAMs since they aren't properties
+				if (type == DataType.BIN_STREAM)
+					continue;
+
+				Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
+				if (obj != null)
+					tempProp.setProperty(columnNames[i], obj.toString());
+			}
+			props.add(tempProp);
+		}
+
 		currProps = props.toArray(new Properties[props.size()]);
 	}
 
 	/**
 	 * Can only be called if retrievePhotos() has been called >=1 time
+	 * 
 	 * @return Image[] array, which contains photos that have been previously
-	 * written to disk.
+	 * written to disk, or null if an IOException is thrown
 	 */
 	public Image[] getRetrievedPhotos()
 	{
@@ -337,14 +338,18 @@ public class PhotoDB
 		try {
 			for (int i = 0; i < imgs.length; i++)
 				imgs[i] = ImageIO.read(currPhotos[i]);
-		} catch (IOException e) { e.printStackTrace(); }
+		} catch (IOException e) {
+			e.printStackTrace();
+			return null;
+		}
 		
 		return imgs;
 	}
 	
 	/**
 	 * Returns the (canonical) PATHS to the images, not the images themselves
-	 * @return
+	 * 
+	 * @return A <code>File</code> array that represents all retrieved photos
 	 */
 	public File[] getRetrievedPhotoPaths()
 	{
@@ -353,7 +358,9 @@ public class PhotoDB
 	
 	/**
 	 * Can only be called if either retrievePhotos() or retrievePhotoPropertiesOnly() has been called >=1 time
-	 * @return
+	 * 
+	 * @return A <code>Properties</code> array that represents the properties
+	 * of all retrieved photos
 	 */
 	public Properties[] getRetrievedPhotoProperties()						
 	{
@@ -372,19 +379,19 @@ public class PhotoDB
 	 * Notes on the caching: this method will first determine if retrievePhotos() has been
 	 * called. If it has, it will use those cached photos and not do anything. If not,
 	 * it will determine whether that photo has already been cached during this connection,
-	 * and will use that cache if it has. Otherwise, it will attempt to write the file
+	 * and use that cache if it has. Otherwise, it will attempt to write the file
 	 * to disk. (If a file with the same name already exists in the temp directory, it
 	 * will return an Image object of that file.)
 	 * 
 	 * @param uniqueKeyValue The value of the unique key for the photo that is
 	 * intended to be retrieved.
-	 * @return
+	 * @return An <code>Image</code> that corresponds to the uniqueKeyValue, or null
+	 * if either an SQLException or IOException is thrown
 	 */
 	public Image getSpecificPhoto(Object uniqueKeyValue)
 	{
-		// If there's no connection, return immediately
 		if (conn == null)
-			return null;
+    		throw new IllegalStateException();
 				
 		Image image = null;
 		PreparedStatement stmt = null;
@@ -399,7 +406,7 @@ public class PhotoDB
 			
 			// Get the filename first
 	    	String filename = rs.getObject(uniqueKey + 1).toString();
-	    	File file = new File(TEMP_PATH + "\\" + filename);
+	    	File file = new File(cachePath + "\\" + filename);
 
 	    	// If for some reason retrievePhotos() was called, use currPhotos
 	    	// -- Note: For this to work, the filename for the temp file should be
@@ -453,6 +460,7 @@ public class PhotoDB
 		} catch (Exception e ) {
 			e.printStackTrace();
 			log.error("ERROR retrieving photo with unique key value: " + uniqueKeyValue.toString());
+			return null;
 		}
 		return image;
 	}
@@ -464,18 +472,19 @@ public class PhotoDB
 	 *
 	 * Use this in conjunction with getSpecificPhoto() and retrievePhotoPropertiesOnly(),
 	 * or use retrievePhotos() by itself.
-	 * @return
+	 * 
+	 * @return The array of thumbnail images in the database, or null if
+	 * either PhotoDB is not connected to any database or an exception is thrown.
 	 */
 	public Image[] getPhotoThumbnails()
 	{
-		// If there's no connection, return immediately
 		if (conn == null)
-			return null;
+    		throw new IllegalStateException();
 				
 		ArrayList<Image> thumbs = new ArrayList<Image>();
 		PreparedStatement stmt = null;
 		
-		// Same as in getSpecificPhoto(), except you WANT the thumbnail
+		// Same as in getSpecificPhoto(), except you want the thumbnail
 		// and ALL rows are selected through the query
 		String thumbCol = "";
 		for (int i = 0; i < columnNames.length; i++)
@@ -489,30 +498,30 @@ public class PhotoDB
 			}
 		}
 		String query = "SELECT `" + thumbCol + "` FROM " + tableName;
-
+		
 		try {
 			stmt = conn.prepareStatement(query);
 			ResultSet rs = stmt.executeQuery();
-			
+	
 			while (rs.next())
 			{
 				InputStream in = rs.getBinaryStream(1);
 				thumbs.add(ImageIO.read(in));
 			}
-		} catch (Exception e ) {
+		} catch (Exception e) {
 			e.printStackTrace();
-			log.error("ERROR retrieving thumbnails");
+			return null;
 		}
 
 		return thumbs.toArray(new Image[thumbs.size()]);
 	}
 	
 	/**
-	 * Deletes all files in the temp directory PhotoDB created
+	 * Deletes all files in the cache directory PhotoDB created
 	 */
-	public void deleteTempFiles()
+	public void deleteCachedFiles()
 	{
-		File tempDir = new File(TEMP_PATH);
+		File tempDir = new File(cachePath);
 		if (tempDir.exists())
 		{
 			File[] files = tempDir.listFiles();
@@ -524,10 +533,27 @@ public class PhotoDB
 		}
 	}
 	
+	public String getCacheDirectory()
+	{
+		return cachePath;
+	}
+	
+	/**
+	 * This method sets the directory which PhotoDB uses for caching purposes,
+	 * specifically retrievePhotos() and getSpecificPhoto().
+	 * 
+	 * @param filepath The filepath to the directory to store cached photos in
+	 */
+	public void setCacheDirectory(String filepath)
+	{
+		cachePath = filepath;
+	}
+	
 	/**
 	 * Returns a COPY of the column names that have been set,
 	 * and which should match the current table schema.
-	 * @return
+	 * 
+	 * @return a copy of the column names used by this PhotoDB
 	 */
     public String[] getColumnNames()
     {
@@ -545,7 +571,8 @@ public class PhotoDB
     
     /**
      * Returns a COPY of the mappings of column names and data types
-     * @return
+     * 
+     * @return Hash<String, DataType> of the column names and data types
      */
     public HashMap<String, DataType> getColumnTypes()
     {
@@ -565,6 +592,7 @@ public class PhotoDB
      * Sets the column which contains the unique key/identifier for
      * each row to uniqueKey, where the first column corresponds to a unique
      * key value of 0.
+     * 
      * @param uniqueKey The value of the unique key to be set
      */
     public void setUniqueKey(int uniqueKey)
@@ -585,13 +613,15 @@ public class PhotoDB
      * Note that if the database is updated after this method is called, the array
      * will no longer be consistent with the entries in the database and this method
      * will have to be called again.
-     * @return
+     * 
+     * @return An <code>Object</code> array of all the unique keys stored in the
+     * database, or null if an SQLException is thrown.
      */
     public Object[] getAllUniqueKeys()
     {
     	// If there's no connection, return immediately
     	if (conn == null)
-    		return null;
+    		throw new IllegalStateException();
     	
     	ArrayList<Object> objs = new ArrayList<Object>();
     	PreparedStatement stmt = null;
@@ -604,7 +634,10 @@ public class PhotoDB
     		while (rs.next())
     			objs.add(rs.getObject(1));
     		
-    	} catch (SQLException e) { e.printStackTrace(); }
+    	} catch (SQLException e) {
+    		e.printStackTrace(); 
+    		return null;
+    	}
 
     	return objs.toArray();
     }
@@ -729,7 +762,7 @@ public class PhotoDB
             	// Get the file and InputStream ready for the StreamWriter
             	String filename = rs.getObject(uniqueKey + 1).toString();
             	InputStream in = rs.getBinaryStream(index);
-            	File file = new File(TEMP_PATH + "\\" + filename);
+            	File file = new File(cachePath + "\\" + filename);
             	
             	Thread t = new Thread(new StreamWriter(in, file));
             	t.start();

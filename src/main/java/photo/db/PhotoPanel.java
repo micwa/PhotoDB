@@ -74,7 +74,7 @@ public class PhotoPanel extends JPanel
 	private Image currPhoto;
 	private int currIndex = -1;
 	
-	// Whether this panel is connected to a database or not
+	// Whether PhotoPanel is connected to a database
 	private boolean connected;
 	
 	// All properties for the photo
@@ -140,9 +140,9 @@ public class PhotoPanel extends JPanel
 			log.error("Error connecting to database");
 			return false;
 		}
-		connected = true;
 		retrievePropsFromDB();
 		initThumbPane();
+		connected = true;
 		
 		left.setEnabled(true);												//Show image view and view the first photo
 		right.setEnabled(true);
@@ -167,8 +167,8 @@ public class PhotoPanel extends JPanel
 			log.error("Error connecting to database");
 			return false;
 		}
-		connected = false;
 		
+		connected = false;
 		left.setEnabled(false);
 		right.setEnabled(false);
 		JOptionPane.showMessageDialog(this, "Successfully disconnected from database");
@@ -183,7 +183,7 @@ public class PhotoPanel extends JPanel
 	public void dispose()
 	{
 		disconnectFromDB();
-		db.deleteTempFiles();
+		db.deleteCachedFiles();
 	}
 	
 	/**
@@ -191,9 +191,6 @@ public class PhotoPanel extends JPanel
 	 */
 	public void uploadPhotosIntoDB()
 	{
-		if (!connected)
-			return;
-		
 		JFileChooser chooser = new JFileChooser();
 		chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
 		chooser.setMultiSelectionEnabled(true);
@@ -224,16 +221,18 @@ public class PhotoPanel extends JPanel
 	
 	/**
 	 * Sets the current photo to the (index+1)th photo in the database;
-	 * draws a border around that photo's thumbnail; and calls repaint();
+	 * draws a border around that photo's thumbnail; and calls repaint().
+	 * If there is no connection to the database, this method will still
+	 * paint thumbnail borders but always display the last obtained photo.
 	 *
-	 * @pre a photo at row <code>index+1</code> must exist in the database
+	 * @pre A photo at row <code>index+1</code> must exist in the database
 	 * (or else there will be an ArrayOutOfBoundsException)
-	 * @param index
+	 * @param index The index of the photo (per photoKeys) to show
 	 */
 	public void showPhoto(int index)				
 	{		
-		// No need to continue if same picture is clicked on twice (or if there's no connection)
-		if (index == currIndex || !connected)
+		// No need to continue if same picture is clicked on twice
+		if (index == currIndex)
 			return;
 		
 		int prevIndex = currIndex;
@@ -255,7 +254,8 @@ public class PhotoPanel extends JPanel
 		// Since the photo in the thumbnail array corresponds to the unique
 		// key in the primary keys array, call getSpecificPhoto with that key
 		// by tracking the current index of the thumbnail array.
-		currPhoto = db.getSpecificPhoto(photoKeys[currIndex]);
+		if (connected)
+			currPhoto = db.getSpecificPhoto(photoKeys[currIndex]);
 		updatePhotoProperties();
 		repaint();
 	}
@@ -270,6 +270,25 @@ public class PhotoPanel extends JPanel
 		
 		log.info("DB settings updated");
 	}
+
+	/**
+	 * Whenever the database is updated (or if properties have not yet been
+	 * retrieved), call this method to update the properties label. If for some
+	 * reason there is an SQLException retrieving the properties, an error
+	 * dialog pops up.
+	 */
+	public void retrievePropsFromDB()
+	{
+		try {
+			db.retrievePhotoPropertiesOnly();
+		} catch (SQLException e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, "Error retrieving properties from database",
+											"Error", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		photoProps = db.getRetrievedPhotoProperties();
+	}
 	
 	/**
 	 * This method updates the properties panel (south) to display the
@@ -277,15 +296,17 @@ public class PhotoPanel extends JPanel
 	 * by cycling through them with all the column names, and thus they
 	 * will appear in that order.
 	 * 
-	 * Note: initPropertiesView() should be called before this to update
+	 * Note: retrievePropsFromDB() should be called before this to update
 	 * PhotoPanel's properties or else they will not be consistent with the
 	 * thumbnails. This method, besides checking for null, has no way of
 	 * determining whether current properties are up-to-date or not.
 	 */
 	public void updatePhotoProperties()
 	{
-		// If for some reason there are no properties stored, return immediately
-		if (photoProps == null)
+		// If there are no properties stored, return (should only be possible if
+		// retrievePhotosFromDB() encountered an exception)
+		// Also disallow viewing properties if disconnected (despite being cached)
+		if (photoProps == null || !connected)
 			return;
 		
 		Properties currProp = photoProps[currIndex];
@@ -297,17 +318,19 @@ public class PhotoPanel extends JPanel
 			if (currProp.getProperty(s) != null)							//Store the property if it isn't null
 				values[i++] = currProp.getProperty(s);
 		
-		// Hardcoded properties format
+		// Hard-coded properties format
 		props.setText("<html><pre><b>Properties:</b> " + "<br>" + "Index: " + values[0] + "\t\tFilename: "
 						+ values[1] + "<br>Format: " + values[2] + "\t\tSize: " + values[4] + " bytes<br>Date: "
 						+ values[5] + "\tDescription: " + values[3] + "</pre></html>");
-		
-		log.info("Properties updated");
 	}
 	
 	public void paintComponent(Graphics g)
 	{
 		super.paintComponent(g);
+		
+		// Don't bother if currPhoto == null (should only be possible after first initialization)
+		if (currPhoto == null)
+			return;
 		
 		if (currIndex != -1)
 		{			
@@ -381,7 +404,9 @@ public class PhotoPanel extends JPanel
 		thumbPanel.setBackground(Color.WHITE);
 		thumbPanel.setLayout(new BoxLayout(thumbPanel, BoxLayout.Y_AXIS));
 		thumbPanel.add(Box.createRigidArea(new Dimension(0, 5)));			//Initial space
-
+		
+		if (thumbScroll != null)											//So there's no overlap
+			this.remove(thumbScroll);
 		thumbScroll = new JScrollPane(thumbPanel);							//ScrollPane
 		thumbScroll.setBackground(Color.WHITE);
 		thumbScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);		//Fixes alignment problems... thank god
@@ -415,16 +440,6 @@ public class PhotoPanel extends JPanel
 	}
 	
 	/**
-	 * Whenever the database is updated (or if properties have not yet been
-	 * retrieved), call this method to update the properties label.
-	 */
-	private void retrievePropsFromDB()
-	{
-		db.retrievePhotoPropertiesOnly();
-		photoProps = db.getRetrievedPhotoProperties();
-	}
-	
-	/**
 	 * Moved here from PhotoDB, since each PhotoDB client will likely upload
 	 * photos differently.
      * 
@@ -444,7 +459,7 @@ public class PhotoPanel extends JPanel
 	}
 	
 	/**
-	 * Uploads <code>file</code> into the database if it does not exist already
+	 * Uploads <code>file</code> into the database if it does not exist already.
 	 * 
 	 * @param file The java.io.File that represents the file being uploaded
 	 */
@@ -468,7 +483,6 @@ public class PhotoPanel extends JPanel
 		data[7] = file;
 
 		db.insertRow(data);
-		log.info(file.toString() + " loaded");
 	}
 	
 	private class ButtonListener implements ActionListener
