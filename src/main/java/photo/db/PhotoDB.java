@@ -61,8 +61,9 @@ public class PhotoDB
 	// Cached photos from getSpecificPhoto(), and whether the cache has completed or not
 	private ArrayList<File> cachedPhotos;
 	private HashMap<File, Boolean> cachedDone;
-	// Path where ALL temp/cached photos are stored
-	private String cachePath = "temp835134";
+	private ArrayList<StreamWriter> streamWriters;
+	// Path where ALL retrieved/cached photos are stored
+	private String photoPath = "temp835134";
 	
 	// The column of the unique key, to identify each row entry
 	private int uniqueKey;
@@ -127,7 +128,7 @@ public class PhotoDB
         conn = null;
         
         // If the temp directory does not exist, create it
-		File tempDir = new File(cachePath);
+		File tempDir = new File(photoPath);
 		if (!tempDir.exists())
 			tempDir.mkdirs();
     }
@@ -151,6 +152,7 @@ public class PhotoDB
 
 		cachedPhotos = new ArrayList<File>();
 		cachedDone = new HashMap<File, Boolean>();
+		streamWriters = new ArrayList<StreamWriter>();
 		conn = DriverManager.getConnection(dbURLStart + dbHostname + "/" + dbName, user, password);
 	}
 	
@@ -257,7 +259,7 @@ public class PhotoDB
 	}
 
 	/**
-	 * Retrieves photos from database and writes them to the temp directory
+	 * Retrieves photos from database and writes them to the photo directory
 	 * in the order that they were inserted into the database.
 	 * This method retrieves and stores the photo properties as well.
 	 * 
@@ -387,12 +389,12 @@ public class PhotoDB
 	 * Based on the <code>uniqueKeyValue</code>, selects a row whose unique key value
 	 * matches that value, and caches and returns the photo stored in that row.
 	 *
-	 * This ALSO caches the photo in the temp directory similarly to retrievePhotos().
+	 * This ALSO caches the photo in the photo directory similarly to retrievePhotos().
 	 * However, unlike retrievePhotos(), the file-writing is asynchronous so the image
 	 * can be viewed before the stream writer finishes writing.
 	 *
 	 * Notes on the caching: this method will first determine if retrievePhotos() has been
-	 * called. If it has, it will use those cached photos and not cache anything. If not,
+	 * called. If it has, it will use those photos and not cache anything. If not,
 	 * it will determine whether the requested photo has already been cached during this connection,
 	 * and use that cache if it has. Otherwise, it will attempt to cache the file
 	 * to disk. (If a file with the same name already exists in the temp directory, it
@@ -422,7 +424,7 @@ public class PhotoDB
 			
 			// Get the filename first
 	    	String filename = rs.getObject(uniqueKey + 1).toString();
-	    	File file = new File(cachePath + "\\" + filename);
+	    	File file = new File(photoPath + "\\" + filename);
 
 	    	// If for some reason retrievePhotos() was called, use currPhotos
 	    	// -- Note: For this to work, the filename for the temp file should be
@@ -453,22 +455,31 @@ public class PhotoDB
 	    				break;
 	    			}
 	    		}
-	    		// Start writing the image using a separate InputStream
+	    		// Start writing the image using a separate InputStream IFF a thread doesn't already exist to write it
 	    		// If the file already exists, the thread will terminate immediately
-	    		Thread t = new Thread(new StreamWriter(rs.getBinaryStream(index), file));
-	    		t.start();
-	    		cachedDone.put(file, false);
+	    		if (!cachedPhotos.contains(file))
+	    		{
+	    			StreamWriter sw = new StreamWriter(rs.getBinaryStream(index), file);
+		    		Thread t = new Thread(sw);
+		    		t.start();
+		    		cachedDone.put(file, false);
+		    		streamWriters.add(sw);
+		    		cachedPhotos.add(file);									//Add if already existed on disk or not
+	    		}
 	    		
 	    		// Read the image
 	    		in = rs.getBinaryStream(index);
 	    		image = ImageIO.read(in);
-	    		
-	    		cachedPhotos.add(file);										//Add if already existed or not
 	    	}
 		} catch (Exception e ) {
 			e.printStackTrace();
 			return null;
+		} finally {
+			try {
+				stmt.close();
+			} catch (SQLException e) { e.printStackTrace(); }
 		}
+
 		return image;
 	}
 	
@@ -518,41 +529,57 @@ public class PhotoDB
 		} catch (Exception e) {
 			e.printStackTrace();
 			return null;
+		} finally {
+			try {
+				stmt.close();
+			} catch (SQLException e) { e.printStackTrace(); }
 		}
 
 		return thumbs.toArray(new Image[thumbs.size()]);
 	}
 	
 	/**
-	 * Deletes all files in the cache directory PhotoDB created
+	 * Deletes all files that have been retrieved or cached by PhotoDB in the
+	 * photo path directory that was set before, and deletes the directory as
+	 * well if there are no other files present. Also, all StreamWriters are
+	 * stopped so files can be unlocked for deletion.
+	 * 
+	 * Note that if the photo directory is changed after caching/retrieval,
+	 * the files cached and retrieved prior to the change will not be deleted.
 	 */
-	public void deleteCachedFiles()
+	public void deletePhotoDirectory()
 	{
-		File tempDir = new File(cachePath);
+		File tempDir = new File(photoPath);
 		if (tempDir.exists())
 		{
-			File[] files = tempDir.listFiles();
-			
-			for (int i = 0; i < files.length; i++)
-				files[i].delete();
+			if (streamWriters != null)
+				for (StreamWriter sw : streamWriters)
+					sw.stop();												//Works because it's in a different thread :)
+			if (currPhotos != null)
+				for (File f : currPhotos)
+					f.delete();	
+			if (cachedPhotos != null)
+				for (File f : cachedPhotos)
+					f.delete();
+
 			tempDir.delete();
 		}
 	}
 	
-	public String getCacheDirectory()
+	public String getPhotoDirectory()
 	{
-		return cachePath;
+		return photoPath;
 	}
 	
 	/**
-	 * Sets the directory which PhotoDB uses for caching purposes,
+	 * Sets the directory which PhotoDB uses for caching/retrieving purposes,
 	 * specifically retrievePhotos() and getSpecificPhoto().
 	 * 
 	 * @param filepath The filepath to the directory to store cached photos in
 	 */
-	public void setCacheDirectory(String filepath)
+	public void setPhotoDirectory(String filepath)
 	{
-		cachePath = filepath;
+		photoPath = filepath;
 	}
 	
 	/**
@@ -724,6 +751,11 @@ public class PhotoDB
 	    		else
 	    			stmt.setBinaryStream(index, fis, ((File) datum).length());
 			} catch (IOException e) { e.printStackTrace(); }
+    		finally {
+    			try {
+					fis.close();
+				} catch (IOException e) { e.printStackTrace(); }
+    		}
     		break;
     	default:
     		throw new IllegalArgumentException("Data type not supported");
@@ -767,13 +799,13 @@ public class PhotoDB
             	// Get the file and InputStream ready for the StreamWriter
             	String filename = rs.getObject(uniqueKey + 1).toString();
             	InputStream in = rs.getBinaryStream(index);
-            	File file = new File(cachePath + "\\" + filename);
+            	File file = new File(photoPath + "\\" + filename);
             	
             	Thread t = new Thread(new StreamWriter(in, file));
             	t.start();
 				try {
 					t.join();												//Wait for this thread - not async
-				} catch (InterruptedException e) { e.printStackTrace(); }										
+				} catch (InterruptedException e) { e.printStackTrace(); }
             	
 	        	return file;
             default:
@@ -795,11 +827,13 @@ public class PhotoDB
 	{
 		private InputStream in;
 		private File file;
+		private boolean doRun;
 		
 		public StreamWriter(InputStream in, File file)
 		{
 			this.in = in;
 			this.file = file;
+			doRun = true;
 		}
 		
 		/**
@@ -814,12 +848,30 @@ public class PhotoDB
 	    		try {
 	    			os = new FileOutputStream(file);				//Writing the stream to disk
 	    			int c = 0;
-	    			while ((c = in.read()) != -1)
+	    			while (doRun && (c = in.read()) != -1)
 	    				os.write(c);
 	    			cachedDone.put(file, true);
-	    			System.out.println("FINISHED");
 	    		} catch (IOException e) { e.printStackTrace(); }
+	    		finally {
+	    			try {
+						in.close();
+						os.close();
+					} catch (IOException e) { e.printStackTrace(); }
+	    		}
 	    	}
+		}
+		
+		/**
+		 * Tells this <code>StreamWriter</code> to stop writing to the file
+		 * (and thus release all resources). Does nothing if the file has already
+		 * been written.
+		 * 
+		 * This has to be called from a different thread than the one run() is
+		 * running on.
+		 */
+		public void stop()
+		{
+			doRun = false;
 		}
 	}
 }
