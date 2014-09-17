@@ -39,6 +39,7 @@ public class PhotoViewer extends JFrame
 	private JMenu fileMenu, editMenu;
 	private JMenuItem connectItem, uploadItem, settItem, disconnectItem, exitItem;
 	
+	// The dialog to change settings
 	private SettingsDialog settingsDialog;
 	
 	private final Logger log = Logger.getLogger(PhotoDB.class.getName());
@@ -81,13 +82,16 @@ public class PhotoViewer extends JFrame
 		
 		connectItem = new JMenuItem("Connect to DB");						//File menu
 		uploadItem = new JMenuItem("Upload...");
+		uploadItem.setEnabled(false);										//Disable menu items that first require a connection
 		disconnectItem = new JMenuItem("Disconnect");
+		disconnectItem.setEnabled(false);
 		exitItem = new JMenuItem("Exit");
 		fileMenu.add(connectItem);
-		fileMenu.add(disconnectItem);
 		fileMenu.add(uploadItem);
+		fileMenu.add(disconnectItem);
 		fileMenu.add(exitItem);
-		fileMenu.insertSeparator(2);
+		fileMenu.insertSeparator(1);
+		fileMenu.insertSeparator(4);
 		
 		settItem = new JMenuItem("Settings");								//Edit menu
 		editMenu.add(settItem);
@@ -137,11 +141,26 @@ public class PhotoViewer extends JFrame
 		public void actionPerformed(ActionEvent e)
 		{
 			if (e.getSource() == connectItem)
-				photoPanel.connectToDB();
+			{
+				// If the connection is successful, re-enable upload/disconnect buttons
+				if (photoPanel.connectToDB())
+				{
+					uploadItem.setEnabled(true);
+					disconnectItem.setEnabled(true);
+				}
+			}
+			else if (e.getSource() == disconnectItem)
+			{
+				// If the disconnection is successful, disable upload/disconnect buttons
+				if (photoPanel.disconnectFromDB())
+				{
+					uploadItem.setEnabled(false);	
+					disconnectItem.setEnabled(false);
+				}
+			}
 			else if (e.getSource() == uploadItem)
 				photoPanel.uploadPhotosIntoDB();
-			else if (e.getSource() == disconnectItem)
-				photoPanel.disconnectFromDB();
+			
 			else if (e.getSource() == settItem)
 			{
 				settingsDialog.setLocationRelativeTo(PhotoViewer.this);		//Doesn't work if put in constructor

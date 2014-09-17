@@ -147,37 +147,25 @@ public class PhotoDB
      * (although if deleteTempFiles() is not called, those temp files will
      * remain and be available for use by getSpecificPhoto()).
      */
-	public void connect()
+	public void connect() throws SQLException
 	{
-	    try {
-	    	if (conn != null)
-				conn.close();
-	    	
-	    	cachedPhotos = new ArrayList<File>();
-	    	conn = DriverManager.getConnection(dbURLStart + dbHostname + "/" + dbName, user, password);
-	    	log.info("Connected to database");
-	    }
-	    catch (SQLException e){
-	    	e.printStackTrace();
-	    	log.error("Error connecting to database");
-	    }
+		if (conn != null)
+			conn.close();
+
+		cachedPhotos = new ArrayList<File>();
+		conn = DriverManager.getConnection(dbURLStart + dbHostname + "/" + dbName, user, password);
+		log.info("Connected to database");
 	}
 	
 	/**
 	 *  Manually disconnect from database and sets the current connection
 	 *  to null.
 	 */
-	public void disconnect()
+	public void disconnect() throws SQLException
 	{
-		try {
-	    	if (conn != null)
-				conn.close();
-	    	conn = null;
-	    }
-	    catch (SQLException e){
-	    	e.printStackTrace();
-	    	log.error("Error disconnecting to database");
-	    }
+		if (conn != null)
+			conn.close();
+		conn = null;
 	}
 	
 	/**

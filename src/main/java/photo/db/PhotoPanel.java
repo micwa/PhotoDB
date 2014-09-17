@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Date;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Properties;
 
@@ -43,6 +44,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.border.Border;
@@ -123,30 +125,54 @@ public class PhotoPanel extends JPanel
 	/**
 	 * Attempts to connect to the database, and then loads up the thumbnail
 	 * pane with whatever thumbnails it retrieves from the database, and
-	 * re-retrieves the properties as well
+	 * re-retrieves the properties as well. Will display an error and return
+	 * false if the attempt to connect fails.
+	 * 
+	 * @return <code>true</code> if a connection is established, <code>false</code> if not
 	 */
-	public void connectToDB()
+	public boolean connectToDB()
 	{
-		db.connect();														//Connect and initialize the thumbnail pane with photos
+		try {
+			db.connect();														//Connect and initialize the thumbnail pane with photos
+		} catch (SQLException e) {
+			JOptionPane.showMessageDialog(this, "Error connecting to database. Check your settings.",
+											"Error", JOptionPane.ERROR_MESSAGE);
+			log.error("Error connecting to database");
+			return false;
+		}
 		connected = true;
 		retrievePropsFromDB();
 		initThumbPane();
 		
 		left.setEnabled(true);												//Show image view and view the first photo
 		right.setEnabled(true);
+		return true;
 	}
 	
 	/**
 	 * Disconnects from the database and disables all functions that require
-	 * database access.
+	 * database access. Will display an error and return false if the attempt
+	 * to disconnect fails.
+	 * 
+	 * @return <code>true</code> if the current connection is terminated
+	 * successfully, <code>false</code> if not
 	 */
-	public void disconnectFromDB()
+	public boolean disconnectFromDB()
 	{
-		db.disconnect();
+		try {
+			db.disconnect();
+		} catch (SQLException e) {
+			JOptionPane.showMessageDialog(this, "Error disconnecting from database.",
+											"Error", JOptionPane.ERROR_MESSAGE);
+			log.error("Error connecting to database");
+			return false;
+		}
 		connected = false;
 		
 		left.setEnabled(false);
 		right.setEnabled(false);
+		JOptionPane.showMessageDialog(this, "Successfully disconnected from database");
+		return true;
 	}
 	
 	/**
@@ -166,9 +192,7 @@ public class PhotoPanel extends JPanel
 	public void uploadPhotosIntoDB()
 	{
 		if (!connected)
-		{
 			return;
-		}
 		
 		JFileChooser chooser = new JFileChooser();
 		chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
