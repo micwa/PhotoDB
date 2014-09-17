@@ -18,41 +18,17 @@
  */
 package photo.db;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.Graphics;
-import java.awt.Image;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
-import java.awt.event.ComponentListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.File;
-import java.io.IOException;
-import java.util.Properties;
 
-import javax.swing.DefaultListModel;
-import javax.swing.ImageIcon;
-import javax.swing.JButton;
 import javax.swing.JDialog;
-import javax.swing.JFileChooser;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JList;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.ListSelectionModel;
 import javax.swing.UIManager;
-import javax.swing.UnsupportedLookAndFeelException;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
 
 import org.apache.log4j.Logger;
 
@@ -61,7 +37,7 @@ public class PhotoViewer extends JFrame
 	private PhotoPanel photoPanel;
 	private JMenuBar menuBar;
 	private JMenu fileMenu, editMenu;
-	private JMenuItem connectItem, uploadItem, settItem, exitItem;
+	private JMenuItem connectItem, uploadItem, settItem, disconnectItem, exitItem;
 	
 	private SettingsDialog settingsDialog;
 	
@@ -105,8 +81,10 @@ public class PhotoViewer extends JFrame
 		
 		connectItem = new JMenuItem("Connect to DB");						//File menu
 		uploadItem = new JMenuItem("Upload folder...");
+		disconnectItem = new JMenuItem("Disconnect");
 		exitItem = new JMenuItem("Exit");
 		fileMenu.add(connectItem);
+		fileMenu.add(disconnectItem);
 		fileMenu.add(uploadItem);
 		fileMenu.add(exitItem);
 		fileMenu.insertSeparator(2);
@@ -117,6 +95,7 @@ public class PhotoViewer extends JFrame
 		ActionListener al = new ButtonListener();
 		connectItem.addActionListener(al);
 		uploadItem.addActionListener(al);
+		disconnectItem.addActionListener(al);
 		exitItem.addActionListener(al);
 		settItem.addActionListener(al);
 		
@@ -132,8 +111,8 @@ public class PhotoViewer extends JFrame
 	// mostly to delete the temp files and close the connection
 	public void dispose()
 	{
+		photoPanel.dispose();												//This must go first
 		super.dispose();
-		photoPanel.dispose();
 	}
 	
 	// Gets the inputed settings from the settings dialog and calls PhotoPanel
@@ -157,6 +136,8 @@ public class PhotoViewer extends JFrame
 				photoPanel.connectToDB();
 			else if (e.getSource() == uploadItem)
 				photoPanel.uploadPhotosIntoDB();
+			else if (e.getSource() == disconnectItem)
+				photoPanel.disconnectFromDB();
 			else if (e.getSource() == settItem)
 			{
 				settingsDialog.setLocationRelativeTo(PhotoViewer.this);		//Doesn't work if put in constructor

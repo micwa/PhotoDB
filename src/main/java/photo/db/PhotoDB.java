@@ -18,41 +18,28 @@
  */
 package photo.db;
 
-import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Image;
-import java.awt.event.WindowEvent;
-import java.awt.event.WindowAdapter;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.sql.Blob;
 import java.sql.Connection;
-import java.sql.Date;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.sql.Time;
-import java.sql.Types;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
 import javax.imageio.ImageIO;
-import javax.swing.ImageIcon;
-import javax.swing.JFrame;
-import javax.swing.JPanel;
 
 import org.apache.log4j.Logger;
 
@@ -194,46 +181,8 @@ public class PhotoDB
 	}
 	
 	/**
-	 * This method MUST be modified/overridden if one wants to use a custom table schema,
-     * or data will not be inserted correctly.
-     * 
-	 * @param folderPath the path to the folder, the photos in which will be uploaded 
-	 */
-	public void loadFolder(String folderPath)
-	{
-		// Does NOT load recursively - only files in this folder
-		File[] f = new File(folderPath).listFiles();
-		String query = "SELECT MAX(INDEX) FROM Customers";
-		
-		for (int i = 0; i < f.length; i++)
-        {
-			if (f[i].isFile())
-			{
-                Object[] data = new Object[columnNames.length];
-                
-                // Preparing data
-				String filename = f[i].getName();
-				String format = filename.substring(filename.lastIndexOf(".") + 1, filename.length());
-				long size = f[i].length();
-                String description = "[none]";
-
-                data[0] = i;
-                data[1] = filename;
-                data[2] = format;
-                data[3] = description;
-                data[4] = size;
-                data[5] = new Date(f[i].lastModified());
-                data[6] = f[i];
-                data[7] = f[i];
-				
-				insertRow(data);
-			}
-        }
-		log.info("END: FOLDER LOAD");
-	}
-	
-	/**
-	 * Inserts a row containing <code>data[]</code> into the database.
+	 * Inserts a row containing <code>data[]</code> into the database as long
+	 * as the row's unique key does not already exist in the database.
 	 * 
 	 * @param data The array of data to be inserted.
 	 * The index of each object in data[] should correspond to the column in columnNames
@@ -251,14 +200,35 @@ public class PhotoDB
 	 */
 	public void insertRow(Object[] data)
 	{
-		String query = "INSERT INTO " + tableName + " VALUES (?";
-        for (int i = 0; i < columnNames.length - 1; i++)
-            query += ", ?";
-        query += ")";
-
-		PreparedStatement stmt = null;
+		// If there's no connection, return immediately
+		if (conn == null)
+			return;
+		
+		// Check if the unique key value in <code>data</code> already exists
+		// somewhere in the database
+        String check = "SELECT * FROM " + tableName + " WHERE `" + columnNames[uniqueKey] + "`=?";
+		PreparedStatement stmt = null, stmtCheck = null;
 		
 		try {
+			stmtCheck = conn.prepareStatement(check);
+			stmtCheck.setObject(1, data[uniqueKey], columnTypes.get(columnNames[uniqueKey]).getSqlType());
+			ResultSet rs = stmtCheck.executeQuery();
+			
+			// If the ResultSet contains a row, then don't insert anything
+			if (rs.next())
+			{
+				log.info(data[uniqueKey].toString() + " already exists in database");
+				return;
+			}
+		} catch (SQLException e) { e.printStackTrace(); }
+		
+		// If the unique key value is not in the database, insert it
+		try {
+			String query = "INSERT INTO " + tableName + " VALUES (?";
+	        for (int i = 0; i < columnNames.length - 1; i++)
+	            query += ", ?";
+	        query += ")";
+	        
             stmt = conn.prepareStatement(query);
 
  			for (int i = 0; i < columnNames.length; i++)
@@ -270,7 +240,7 @@ public class PhotoDB
             
             log.info("Row loaded");
 		}
-		catch (Exception e) {
+		catch (SQLException e) {
 			e.printStackTrace();
 	        log.error("ERROR inserting row");
 	    }
@@ -283,6 +253,10 @@ public class PhotoDB
 	 */
 	public void retrievePhotos()
 	{
+		// If there's no connection, return immediately
+		if (conn == null)
+			return;
+				
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName;
 		ArrayList<File> paths = new ArrayList<File>();
@@ -326,6 +300,10 @@ public class PhotoDB
 	 */
 	public void retrievePhotoPropertiesOnly()
 	{
+		// If there's no connection, return immediately
+		if (conn == null)
+			return;
+				
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName;
 		ArrayList<Properties> props = new ArrayList<Properties>();
@@ -416,6 +394,10 @@ public class PhotoDB
 	 */
 	public Image getSpecificPhoto(Object uniqueKeyValue)
 	{
+		// If there's no connection, return immediately
+		if (conn == null)
+			return null;
+				
 		Image image = null;
 		PreparedStatement stmt = null;
 		String query = "SELECT * FROM " + tableName + " WHERE `"						//Table name has to be hardcoded
@@ -498,6 +480,10 @@ public class PhotoDB
 	 */
 	public Image[] getPhotoThumbnails()
 	{
+		// If there's no connection, return immediately
+		if (conn == null)
+			return null;
+				
 		ArrayList<Image> thumbs = new ArrayList<Image>();
 		PreparedStatement stmt = null;
 		
@@ -518,7 +504,6 @@ public class PhotoDB
 
 		try {
 			stmt = conn.prepareStatement(query);
-			log.info(stmt);
 			ResultSet rs = stmt.executeQuery();
 			
 			while (rs.next())
@@ -616,6 +601,10 @@ public class PhotoDB
      */
     public Object[] getAllUniqueKeys()
     {
+    	// If there's no connection, return immediately
+    	if (conn == null)
+    		return null;
+    	
     	ArrayList<Object> objs = new ArrayList<Object>();
     	PreparedStatement stmt = null;
     	String query = "SELECT `" + columnNames[uniqueKey] + "` FROM " + tableName;
@@ -667,7 +656,7 @@ public class PhotoDB
 	 * @param datum The object to be set at column index <code>index</code>
 	 * @throws SQLException If object <code>datum</code> fails to be set
 	 */
-    private void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum) throws SQLException
+	protected void setPrepStatementParam(PreparedStatement stmt, int index, DataType type, Object datum) throws SQLException
     {
     	// Datum may be null - just return immediately
     	if (datum == null)
@@ -732,7 +721,7 @@ public class PhotoDB
      * @return
      * @throws SQLException If there is a problem getting an object from the <code>ResultSet</code>
      */
-    private Object getResultSetParam(ResultSet rs, int index, DataType type) throws SQLException
+    protected Object getResultSetParam(ResultSet rs, int index, DataType type) throws SQLException
     {
     	switch (type)
         {
@@ -777,7 +766,7 @@ public class PhotoDB
 		return buff;
 	}
 	
-	private class StreamWriter implements Runnable
+	protected class StreamWriter implements Runnable
 	{
 		private InputStream in;
 		private File file;
