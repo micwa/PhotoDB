@@ -18,6 +18,8 @@ available for uploading and deleting photos in the database.
 
 ## Features
 
+##### PhotoDB
+
 Access-wise, PhotoDB has the ability to:
 
 * Establish a connection to a MySQL database (note that
@@ -41,7 +43,23 @@ writing them at will
 `BIGINT`, `VARCHAR`, `DATE`, `TIME`, and `BLOB` (which is assumed to be a Java
 binary stream)
 
-See the documentation for more details on what PhotoDB can and cannot do.
+See the documentation in the source files for more details on what PhotoDB can
+and cannot do.
+
+##### The GUI
+
+PhotoViewer is the primary graphical user interface bundled with PhotoDB, and
+demonstrates how PhotoDB can be used; it is not meant to be a fully-fledged
+application that implements every feature of PhotoDB. With that said, PhotoViewer
+allows users to:
+
+* Connect to and disconnect from different databases 
+* Browse through all the photos from the connected database
+* Automatically retrieve thumbnails of photos on connection and use `PhotoDB`'s
+`getSpecificPhoto()` method to view and smartly cache files offline
+* View properties for the current photo in a separate panel
+* Upload photos and folders of photos to the database (non-recursive for folders)
+* Select and delete one or more photos from the database
 
 ### JAR File
 
