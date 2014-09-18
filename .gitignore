@@ -2,6 +2,7 @@
 /logs
 .settings
 /src/test
+/**/resources
 pom.xml
 .classpath
 .project
