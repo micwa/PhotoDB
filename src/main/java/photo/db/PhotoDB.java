@@ -96,9 +96,9 @@ public class PhotoDB
 	 * if it does not already exist.
 	 * 
 	 * @param hostname The hostname of the database
-	 * @param columnNames An array of Strings that exactly the match
-	 * the column names of the table intended to be accessed; the column names should also
-	 * be in the same order as the Strings in the array.
+	 * @param columnNames An array of Strings that exactly the match the column names
+	 * of the table intended to be accessed; the column names should also be in the
+	 * same order as the Strings in the array.
 	 * There are no restrictions on names, except that any column containing the substring
 	 * "thumb" in any (upper/lower) case will be construed as being the thumbnail column.
 	 * In the rare case that two (or more) columns contain "thumb", the first column
@@ -136,11 +136,12 @@ public class PhotoDB
     /**
      * Connect to the database with its current settings; if PhotoDB is
      * connected to a database, that connection will be terminated. All methods
-     * that access the database (insertRow(), retrieve*(), getSpecPhoto(), getPhotoThumbs(),
-     * getAllUniqueKeys()) will throw IllegalStateExceptions if this method is not called first.
+     * that access the database (insertRow(), retrieve*(), getSpecPhoto(),
+     * getPhotoThumbs(), getAllUniqueKeys()) will throw IllegalStateExceptions
+     * if this method is not called first.
      *
      * The photo cache for getSpecificPhoto() is also reset per connection
-     * (although if deleteTempFiles() is not called, those temp files will
+     * (although if deletePhotoDirectory() is not called, those files will
      * remain and be available for use by getSpecificPhoto()).
      * 
      * @throws SQLException If there is an error connecting to the database
@@ -202,28 +203,34 @@ public class PhotoDB
         String check = "SELECT * FROM " + tableName + " WHERE `" + columnNames[uniqueKey] + "`=?";
 		PreparedStatement stmt = null, stmtCheck = null;
 		
-		stmtCheck = conn.prepareStatement(check);
-		stmtCheck.setObject(1, data[uniqueKey], columnTypes.get(columnNames[uniqueKey]).getSqlType());
-		ResultSet rs = stmtCheck.executeQuery();
+		try {
+			stmtCheck = conn.prepareStatement(check);
+			stmtCheck.setObject(1, data[uniqueKey], columnTypes.get(columnNames[uniqueKey]).getSqlType());
+			ResultSet rs = stmtCheck.executeQuery();
 
-		// If the ResultSet contains a row, then don't insert anything
-		if (rs.next())
-			return false;
-		
-		// Now insert the row since checking is done
-		String query = "INSERT INTO " + tableName + " VALUES (?";
-		for (int i = 0; i < columnNames.length - 1; i++)
-			query += ", ?";
-		query += ")";
+			// If the ResultSet contains a row, then don't insert anything
+			if (rs.next())
+				return false;
 
-		stmt = conn.prepareStatement(query);
+			// Now insert the row since checking is done
+			String query = "INSERT INTO " + tableName + " VALUES (?";
+			for (int i = 0; i < columnNames.length - 1; i++)
+				query += ", ?";
+			query += ")";
 
-		for (int i = 0; i < columnNames.length; i++)
-		{
-			// i + 1 for arg2, since setX starts at 1 (not 0 like arrays)
-			setPrepStatementParam(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
+			stmt = conn.prepareStatement(query);
+
+			for (int i = 0; i < columnNames.length; i++)
+			{
+				// i + 1 for arg2, since setX starts at 1 (not 0 like arrays)
+				setPrepStatementParam(stmt, i + 1, columnTypes.get(columnNames[i]), data[i]);
+			}
+			stmt.execute();	
+		} catch (SQLException ex) { throw ex; }
+		finally {
+			if (stmt != null) stmt.close();
+			if (stmtCheck != null) stmt.close();
 		}
-		stmt.execute();
 
 		return true;
 	}
@@ -247,15 +254,19 @@ public class PhotoDB
 		PreparedStatement stmt = null;
 		String query = "DELETE FROM " + tableName + " WHERE `" + columnNames[uniqueKey]	+ "`=?";
 		
-		// Begin deletion
-		stmt = conn.prepareStatement(query);
-		stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
-		int result = stmt.executeUpdate();
-
-		if (result == 1)													//Since only attempt to delete one row
-			return true;
-		else
-			return false;
+		try {
+			// Begin deletion
+			stmt = conn.prepareStatement(query);
+			stmt.setObject(1, uniqueKeyValue, columnTypes.get(columnNames[uniqueKey]).getSqlType());
+			
+			if (stmt.executeUpdate() == 1)									//Since only attempt to delete one row
+				return true;
+			else
+				return false;
+		} catch (SQLException ex) { throw ex; }
+		finally {
+			if (stmt != null) stmt.close();
+		}
 	}
 
 	/**
@@ -275,32 +286,37 @@ public class PhotoDB
 		ArrayList<File> paths = new ArrayList<File>();
 		ArrayList<Properties> props = new ArrayList<Properties>();
 		
-		stmt = conn.prepareStatement(query);
-		ResultSet rs = stmt.executeQuery();						//Getting rows from table
+		try {
+			stmt = conn.prepareStatement(query);
+			ResultSet rs = stmt.executeQuery();						//Getting rows from table
 
-		while (rs.next())
-		{
-			Properties tempProp = new Properties();
-
-			for (int i = 0; i < columnNames.length; i++)
+			while (rs.next())
 			{
-				Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
+				Properties tempProp = new Properties();
 
-				// If it's the image, add path and skip setting properties
-				if (obj instanceof File)
+				for (int i = 0; i < columnNames.length; i++)
 				{
-					paths.add((File) obj);										//Add even if file exists already
-					continue;
+					Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
+
+					// If it's the image, add path and skip setting properties
+					if (obj instanceof File)
+					{
+						paths.add((File) obj);										//Add even if file exists already
+						continue;
+					}
+					if (obj != null)
+						tempProp.setProperty(columnNames[i], obj.toString());
 				}
-				if (obj != null)
-					tempProp.setProperty(columnNames[i], obj.toString());
+				props.add(tempProp);
 			}
-			props.add(tempProp);
+
+			// Store photo file paths - return Image[] in getRetrievedPhotos()
+			currPhotos = paths.toArray(new File[paths.size()]);
+			currProps = props.toArray(new Properties[props.size()]);
+		} catch (SQLException ex) { throw ex; }
+		finally {
+			if (stmt != null) stmt.close();
 		}
-		
-		// Store photo file paths - return Image[] in getRetrievedPhotos()
-		currPhotos = paths.toArray(new File[paths.size()]);
-		currProps = props.toArray(new Properties[props.size()]);
 	}
 	
 	/**
@@ -317,29 +333,34 @@ public class PhotoDB
 		String query = "SELECT * FROM " + tableName;
 		ArrayList<Properties> props = new ArrayList<Properties>();
 		
-		stmt = conn.prepareStatement(query);
-		ResultSet rs = stmt.executeQuery();						//Getting rows from table
+		try {
+			stmt = conn.prepareStatement(query);
+			ResultSet rs = stmt.executeQuery();						//Getting rows from table
 
-		while (rs.next()) 
-		{
-			Properties tempProp = new Properties();
-
-			for (int i = 0; i < columnNames.length; i++)
+			while (rs.next()) 
 			{
-				DataType type = columnTypes.get(columnNames[i]);
+				Properties tempProp = new Properties();
 
-				//Skip BIN_STREAMs since they aren't properties
-				if (type == DataType.BIN_STREAM)
-					continue;
+				for (int i = 0; i < columnNames.length; i++)
+				{
+					DataType type = columnTypes.get(columnNames[i]);
 
-				Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
-				if (obj != null)
-					tempProp.setProperty(columnNames[i], obj.toString());
+					//Skip BIN_STREAMs since they aren't properties
+					if (type == DataType.BIN_STREAM)
+						continue;
+
+					Object obj = getResultSetParam(rs, i + 1, columnTypes.get(columnNames[i]));
+					if (obj != null)
+						tempProp.setProperty(columnNames[i], obj.toString());
+				}
+				props.add(tempProp);
 			}
-			props.add(tempProp);
-		}
 
-		currProps = props.toArray(new Properties[props.size()]);
+			currProps = props.toArray(new Properties[props.size()]);
+		} catch (SQLException ex) { throw ex; }
+		finally {
+			if (stmt != null) stmt.close();
+		}
 	}
 
 	/**
@@ -439,7 +460,6 @@ public class PhotoDB
 	    	// it is no longer alive
 	    	if (cachedPhotos.contains(file) && cachedDone.get(file))
 				return ImageIO.read(file);
-	    	
 	    	// If file's not in either of those arrays, then attempt to cache it
 	    	else
 	    	{
@@ -754,7 +774,7 @@ public class PhotoDB
 			} catch (IOException e) { e.printStackTrace(); }
     		finally {
     			try {
-					fis.close();
+					if (fis != null) fis.close();
 				} catch (IOException e) { e.printStackTrace(); }
     		}
     		break;
@@ -845,7 +865,7 @@ public class PhotoDB
 		
 		/**
 		 * If the file does not exist, writes the file to disk and calls <code>kill()</code>
-		 * on itself after completion. Otherwise, this method does nothing
+		 * on itself after completion. Otherwise, this method does nothing.
 		 */
 		public void run()
 		{
@@ -857,16 +877,16 @@ public class PhotoDB
 	    			int c = 0;
 	    			
 	    			// While this StreamWriter is still "alive", write if this hasn't
-	    			// been stopped, and if it has, Thread.sleep to see if it's woken up
+	    			// been stopped; if it has, Thread.sleep until it is resumed
 	    			while (isAlive)
 	    			{
-		    			while (isAlive && doRun && (c = in.read()) != -1)	//Constantly check for kill() signal
+		    			while (isAlive && doRun && (c = in.read()) != -1)	//Constantly check for kill()/stop() signal
 		    				os.write(c);
 		    			
 		    			if (!doRun)
 		    				Thread.sleep(100);
-		    			else										//Entering here means the StreamWriter is alive, AND
-		    			{											//the file has finished writing, so kill itself
+		    			else										//Entering here means the StreamWriter has either been
+		    			{											//killed OR the file has finished writing, so set done
 		    				this.kill();
 		    				cachedDone.put(file, true);	
 		    			}
@@ -874,8 +894,8 @@ public class PhotoDB
 	    		} catch (Exception e) { e.printStackTrace(); }
 	    		finally {
 	    			try {
-						in.close();
-						os.close();
+						if (in != null) in.close();
+						if (os != null) os.close();
 					} catch (IOException e) { e.printStackTrace(); }
 	    		}
 	    	}
