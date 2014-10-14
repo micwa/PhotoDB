@@ -24,7 +24,6 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.awt.KeyboardFocusManager;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
@@ -32,9 +31,6 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.io.File;
-import java.io.IOException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Date;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -229,14 +225,13 @@ public class PhotoPanel extends JPanel
 		int value = chooser.showDialog(this, "Upload");
 		if (value == JFileChooser.APPROVE_OPTION)
 		{
-			File[] f = chooser.getSelectedFiles();
-			System.out.println(f[0].isFile() + ", " + f[0].getPath());
-			for (int i = 0; i < f.length; i++)
+			File[] files = chooser.getSelectedFiles();
+			for (File f : files)
 			{
-				if (f[i].isFile())
-					loadFile(f[i]);
+				if (f.isFile())
+					loadFile(f);
 				else
-					loadFolder(f[i]);
+					loadFolder(f);
 			}
 			updatePhotoDisplay();
 		}
@@ -261,12 +256,10 @@ public class PhotoPanel extends JPanel
 			if (result != 0)
 				return;
 			
-			// If otherIndices is not empty, delete from there; else, delete currently selected photo
+			// If multipleIndices is not empty, delete from there; else, delete currently selected photo
 			if (multipleIndices.size() > 0)
-			{
-				for (int i = 0; i < multipleIndices.size(); i++)
-					db.deleteRow(photoKeys[multipleIndices.get(i)]); 			//Delete all photos selected
-			}
+				for (int i : multipleIndices)
+					db.deleteRow(photoKeys[i]); 			//Delete all photos selected
 			else
 				db.deleteRow(photoKeys[currIndex]);
 			updatePhotoDisplay();
@@ -307,8 +300,8 @@ public class PhotoPanel extends JPanel
 			setThumbnailBorder(prevIndex, BorderFactory.createEmptyBorder());
 			if (multipleIndices.size() > 0)									//Clear all borders
 			{
-				for (int i = 0; i < multipleIndices.size(); i++)
-					setThumbnailBorder(multipleIndices.get(i), BorderFactory.createEmptyBorder());
+				for (int i : multipleIndices)
+					setThumbnailBorder(i, BorderFactory.createEmptyBorder());
 				multipleIndices.clear();
 			}
 		}
@@ -392,7 +385,8 @@ public class PhotoPanel extends JPanel
 				height = imageH * w / imageW;
 				width = w;
 			}
-			g.drawImage(currPhoto, thumbScroll.getWidth() + (w + 10) / 2 - width / 2, (h + 10) / 2 - height / 2, width, height, this);
+			g.drawImage(currPhoto, thumbScroll.getWidth() + (w + 10) / 2 - width / 2,
+					(h + 10) / 2 - height / 2, width, height, this);
 		}
 	}
 	
@@ -420,8 +414,10 @@ public class PhotoPanel extends JPanel
 		addComponentListener(new ComponentAdapter() {
 			public void componentResized(ComponentEvent e)
 			{
-				if (thumbScroll != null) thumbScroll.setPreferredSize(new Dimension(100, getHeight() - propScroll.getHeight()));
-				if (propScroll != null) propScroll.setPreferredSize(new Dimension(getWidth() - right.getWidth() - left.getWidth() - 20, 95));
+				if (thumbScroll != null)
+					thumbScroll.setPreferredSize(new Dimension(100, getHeight() - propScroll.getHeight()));
+				if (propScroll != null)
+					propScroll.setPreferredSize(new Dimension(getWidth() - right.getWidth() - left.getWidth() - 20, 95));
 				south.revalidate();
 				south.repaint();
 				repaint();
@@ -516,11 +512,11 @@ public class PhotoPanel extends JPanel
 	private void loadFolder(File folder)
 	{
 		// Does NOT load recursively - only files in this folder
-		File[] f = new File(folder.getPath()).listFiles();
+		File[] files = new File(folder.getPath()).listFiles();
 		
-		for (int i = 0; i < f.length; i++)
-			if (f[i].isFile())
-                loadFile(f[i]);
+		for (File f : files)
+			if (f.isFile())
+                loadFile(f);
 	}
 	
 	/**
@@ -598,9 +594,7 @@ public class PhotoPanel extends JPanel
 								multipleIndices.add(currIndex);				//Add current index as well
 							multipleIndices.add(i);
 						}
-						//else												//Don't clear here - showPhoto() will clear automatically
-							//multipleIndices.clear();
-						showPhoto(i);
+						showPhoto(i);										//multipleIndices clear()s on showPhoto() only
 						
 						return;
 					}

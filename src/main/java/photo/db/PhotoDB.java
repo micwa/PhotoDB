@@ -452,8 +452,8 @@ public class PhotoDB
 	    	// -- Note: For this to work, the filename for the temp file should be
 	    	//		the same as in getPrepStatementParam()
 	    	if (currPhotos != null && currPhotos.length > 0)
-	    		for (int i = 0; i < currPhotos.length; i++)
-	    			if (file.equals(currPhotos[i]))
+	    		for (File f : currPhotos)
+	    			if (file.equals(f))
 	    				return ImageIO.read(file);
 	    	
 	    	// Now check if the file had been cached by THIS method and the thread writing
@@ -526,13 +526,12 @@ public class PhotoDB
 		// Same as in getSpecificPhoto(), except you want the thumbnail
 		// and ALL rows are selected through the query
 		String thumbCol = "";
-		for (int i = 0; i < columnNames.length; i++)
+		for (String colName : columnNames)
 		{
-			String colName = columnNames[i];
 			DataType type = columnTypes.get(colName);
 			if (type == DataType.BIN_STREAM && colName.toLowerCase().indexOf("thumb") > -1)
 			{
-				thumbCol = columnNames[i];
+				thumbCol = colName;
 				break;
 			}
 		}
