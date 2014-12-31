@@ -26,31 +26,31 @@ import javax.swing.JFrame;
 
 public class PhotoApp
 {
-	public static void main(String[] args)
-	{
-		PhotoDB db = new PhotoDB("localhost:3306");
-		PhotoViewer viewer = new PhotoViewer(db);
-		
-		viewer.setBounds(200, 200, 800, 600);
-		viewer.setBackground(Color.WHITE);
-		viewer.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		viewer.setVisible(true);
-	    
-		viewer.addWindowListener(new WindowCloseListener(db));
-	}
-	
-	private static class WindowCloseListener extends WindowAdapter
-	{		
-		private PhotoDB db;
-		
-		public WindowCloseListener(PhotoDB db)
-		{
-			this.db = db;
-		}
-		
-		public void windowClosing(WindowEvent e)
-		{
-			db.deletePhotoDirectory();
-		}
-	}
+    public static void main(String[] args)
+    {
+        PhotoDB db = new PhotoDB("localhost:3306");
+        PhotoViewer viewer = new PhotoViewer(db);
+        
+        viewer.setBounds(200, 200, 800, 600);
+        viewer.setBackground(Color.WHITE);
+        viewer.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        viewer.setVisible(true);
+        
+        viewer.addWindowListener(new WindowCloseListener(db));
+    }
+    
+    private static class WindowCloseListener extends WindowAdapter
+    {        
+        private PhotoDB db;
+        
+        public WindowCloseListener(PhotoDB db)
+        {
+            this.db = db;
+        }
+        
+        public void windowClosing(WindowEvent e)
+        {
+            db.deletePhotoDirectory();
+        }
+    }
 }
