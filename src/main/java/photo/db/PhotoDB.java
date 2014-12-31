@@ -63,7 +63,7 @@ public class PhotoDB
     private HashMap<File, Boolean> cachedDone;
     private ArrayList<StreamWriter> streamWriters;
     // Path where ALL retrieved/cached photos are stored
-    private String photoPath = "temp835134";
+    private String photoPath = "photodb_local";
     
     // The column of the unique key, to identify each row entry
     private int uniqueKey;
@@ -179,15 +179,15 @@ public class PhotoDB
      * The index of each object in data[] should correspond to the column in columnNames
      * and each object's type the type in columnTypes;
      * i.e. <code>data[i]</code> has data type <code>columnTypes.get(columnNames[i])</code>
-     *     DataType of column:        Type of data[i] expected:
-     *         DataType.INT         =         Integer
-     *        DataType.BOOLEAN     =         Boolean
-     *        DataType.LONG         =         Long
-     *        DataType.DOUBLE     =         Double
-     *        DataType.STRING     =         String
-     *        DataType.DATE         =         java.sql.Date
-     *        DataType.TIME         =         java.sql.Time
-     *         DataType.BIN_STREAM    =        java.io.File
+     *    DataType of column:       Type of data[i] expected:
+     *      DataType.INT        =       Integer
+     *      DataType.BOOLEAN    =       Boolean
+     *      DataType.LONG       =       Long
+     *      DataType.DOUBLE     =       Double
+     *      DataType.STRING     =       String
+     *      DataType.DATE       =       java.sql.Date
+     *      DataType.TIME       =       java.sql.Time
+     *      DataType.BIN_STREAM =       java.io.File
      * 
      * @return <code>true</code> if <code>data[]</code> is inserted properly, <code>false</code>
      * if the unique key value in <code>data[]</code>already exists in the database
@@ -385,27 +385,6 @@ public class PhotoDB
     }
     
     /**
-     * Returns the (canonical) PATHS to the images, not the images themselves
-     * 
-     * @return A <code>File</code> array that represents all retrieved photos
-     */
-    public File[] getRetrievedPhotoPaths()
-    {
-        return currPhotos;
-    }
-    
-    /**
-     * Can only be called if either retrievePhotos() or retrievePhotoPropertiesOnly() has been called >=1 time
-     * 
-     * @return A <code>Properties</code> array that represents the properties
-     * of all retrieved photos
-     */
-    public Properties[] getRetrievedPhotoProperties()                        
-    {
-        return currProps;
-    }
-    
-    /**
      * (The unique key must be properly set in order for this method to work.)
      * Based on the <code>uniqueKeyValue</code>, selects a row whose unique key value
      * matches that value, and caches and returns the photo stored in that row.
@@ -585,23 +564,9 @@ public class PhotoDB
             tempDir.delete();
         }
     }
-    
-    public String getPhotoDirectory()
-    {
-        return photoPath;
-    }
-    
-    /**
-     * Sets the directory which PhotoDB uses for caching/retrieving purposes,
-     * specifically retrievePhotos() and getSpecificPhoto().
-     * 
-     * @param filepath The filepath to the directory to store cached photos in
-     */
-    public void setPhotoDirectory(String filepath)
-    {
-        photoPath = filepath;
-    }
-    
+
+// ----- GETTERS AND SETTERS for fields ----- //
+
     /**
      * Returns a COPY of the column names that have been set,
      * and which should match the current table schema.
@@ -615,11 +580,6 @@ public class PhotoDB
             cols[i] = columnNames[i];
         
         return columnNames;
-    }
-    
-    public void setColumnNames(String[] columnNames)
-    {
-        this.columnNames = columnNames;
     }
     
     /**
@@ -636,23 +596,32 @@ public class PhotoDB
         return columnTypes;
     }
     
-    public void setColumnTypes(HashMap<String, DataType> columnTypes)
+    public String getPhotoDirectory()
     {
-        this.columnTypes = columnTypes;
+        return photoPath;
     }
     
     /**
-     * Sets the column which contains the unique key/identifier for
-     * each row to uniqueKey, where the first column corresponds to a unique
-     * key value of 0.
+     * Returns the (canonical) PATHS to the images, not the images themselves
      * 
-     * @param uniqueKey The value of the unique key to be set
+     * @return A <code>File</code> array that represents all retrieved photos
      */
-    public void setUniqueKey(int uniqueKey)
+    public File[] getRetrievedPhotoPaths()
     {
-        this.uniqueKey = uniqueKey;
+        return currPhotos;
     }
-
+    
+    /**
+     * Can only be called if either retrievePhotos() or retrievePhotoPropertiesOnly() has been called >=1 time
+     * 
+     * @return A <code>Properties</code> array that represents the properties
+     * of all retrieved photos
+     */
+    public Properties[] getRetrievedPhotoProperties()                        
+    {
+        return currProps;
+    }
+    
     public int getUniqueKey()
     {
         return uniqueKey;
@@ -693,6 +662,39 @@ public class PhotoDB
         }
 
         return objs.toArray();
+    }
+    
+    /**
+     * Sets the directory which PhotoDB uses for caching/retrieving purposes,
+     * specifically retrievePhotos() and getSpecificPhoto().
+     * 
+     * @param filepath The filepath to the directory to store cached photos in
+     */
+    public void setPhotoDirectory(String filepath)
+    {
+        photoPath = filepath;
+    }
+    
+    public void setColumnNames(String[] columnNames)
+    {
+        this.columnNames = columnNames;
+    }
+    
+    public void setColumnTypes(HashMap<String, DataType> columnTypes)
+    {
+        this.columnTypes = columnTypes;
+    }
+    
+    /**
+     * Sets the column which contains the unique key/identifier for
+     * each row to uniqueKey, where the first column corresponds to a unique
+     * key value of 0.
+     * 
+     * @param uniqueKey The value of the unique key to be set
+     */
+    public void setUniqueKey(int uniqueKey)
+    {
+        this.uniqueKey = uniqueKey;
     }
     
     public void setHostname(String hostname)
