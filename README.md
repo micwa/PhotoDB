@@ -18,19 +18,19 @@ available for uploading and deleting photos in the database.
 
 ## Features
 
-##### PhotoDB
+#### PhotoDB
 
 Access-wise, PhotoDB has the ability to:
 
 * Establish a connection to a MySQL database (note that this depends on
 [MySQL Connector J] (http://dev.mysql.com/downloads/connector/j/), which, if
 you are using the JAR, is included)
-* Download all photos from the database and store them in a local directory
+* Download all photos from the database and store them in a local directory OR
 * Retrieve photos one at a time for viewing, and cache them locally for when
 they are viewed again
 * Retrieve only photo metadata (properties) and/or thumbnails for easier access
-* Upload photos to the database based on the table row's unique identifier
-* Delete photos from the database the same way
+* Upload and delete photos from the database (each photo must possess a unique
+identifier)
 
 PhotoDB is also customizable. Clients and subclasses can:
 
@@ -47,21 +47,19 @@ binary stream)
 See the documentation in the source files for more details on what PhotoDB can
 and cannot do.
 
-##### The GUI
+#### The GUI
 
 PhotoViewer is the graphical user interface currently bundled with PhotoDB and
 demonstrates how PhotoDB can be used; it is not meant to be a fully-fledged
 application that implements every feature of PhotoDB. With that said,
 PhotoViewer allows users to:
 
-* Connect to and disconnect from different databases 
-* Browse through all the photos from the connected database
+* Connect and disconnect from MySQL databases, and browse their photos
 * Automatically retrieve thumbnails of photos on connection and use `PhotoDB`'s
 `getSpecificPhoto()` method to view and smartly cache files offline
 * View properties for the current photo in a separate panel
-* Upload photos and folders of photos to the database (non-recursive for
-folders)
-* Select and delete one or more photos from the database
+* Upload and delete photos from the database (assuming adequate permissions),
+creating thumbnails automatically on upload
 
 ### JAR File
 
